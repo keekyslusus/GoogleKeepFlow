@@ -1,0 +1,22 @@
+body:
+  - type: input
+    attributes:
+      name: email
+      label: "Gmail address:"
+      description: "Enter your gmail address"
+      defaultValue: ""
+  - type: input
+    attributes:
+      name: master_token
+      label: "Master token:"
+      defaultValue: ""
+  - type: textBlock
+    attributes:
+      name: description
+      description: "Get master token at gkeeptokengenerator.duckdns.org\nrequires gmail app password with 2FA enabled."
+  - type: input
+    attributes:
+      name: max_notes_to_show
+      label: "Max notes in list:"
+      description: "Number of recent notes to show with 'keep list' command (default: 10)"
+      defaultValue: "10"

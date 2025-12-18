@@ -1,0 +1,12 @@
+{
+  "ID": "B8F4D5E27C9E5C6BC3E8240FFD9GB1C5",
+  "ActionKeyword": "keep",
+  "Name": "GoogleKeepFlow",
+  "Description": "Add and browse notes in Google Keep",
+  "Author": "keekys",
+  "Version": "1.0.0",
+  "Language": "python",
+  "Website": "https://github.com/keekyslusus/GoogleKeepFlow",
+  "IcoPath": "keep.png",
+  "ExecuteFileName": "main.py"
+}
