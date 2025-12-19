@@ -15,7 +15,7 @@ for sissy bakas who prefer to run it on their own machine instead of using [gkee
 
 ### 1. Download Files
 
-Download this folder to your computer.
+[Download](https://download-directory.github.io/?url=https://github.com/keekyslusus/GoogleKeepFlow/tree/main/token-server) this folder to your computer.
 
 ### 2. Start Server
 
