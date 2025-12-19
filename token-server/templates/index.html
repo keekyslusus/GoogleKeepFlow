@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="icon" href="/static/favicon.png" type="image/png">
+    <title>GKeepFlow token generator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha256/0.9.0/sha256.min.js"></script>
+</head>
+<body>
+    <div class="card">
+        <h1>GoogleKeepFlow</h1>
+        <p class="subtitle">Master token generator for <a class="subtitlelink" href="https://github.com/keekyslusus/GoogleKeepFlow" target="_blank">GoogleKeepFlow</a> plugin</p>
+
+        <div class="steps">
+            <strong>
+                <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 18px; margin-right: 4px;">vpn_key</span>
+                Create App Password
+            </strong>
+            <ol>
+                <li>Go to <a href="https://myaccount.google.com/apppasswords" target="_blank">Google App Passwords</a></li>
+                <li>Create new password</li>
+                <li>Copy the 16-character code</li>
+            </ol>
+        </div>
+
+        <form id="tokenForm">
+            <div class="input-group">
+                <input type="text" id="email" placeholder=" " required>
+                <label for="email">Gmail</label>
+            </div>
+
+            <div class="input-group">
+                <input type="password" id="password" placeholder=" " required>
+                <label for="password">App Password</label>
+            </div>
+
+            <button type="submit" id="submitBtn">Get Token</button>
+        </form>
+
+        <div id="result"></div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

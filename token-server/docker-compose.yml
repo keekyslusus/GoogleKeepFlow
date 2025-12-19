@@ -1,0 +1,17 @@
+services:
+  token-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gkeep-token-server-local:latest
+    container_name: gkeep-token-server-local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"  # localhost
+    environment:
+      - PORT=8080
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"

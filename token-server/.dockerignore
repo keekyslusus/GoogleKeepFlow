@@ -1,0 +1,9 @@
+README.md
+.git
+.gitignore
+*.md
+*.bak
+nginx.conf
+certbot/
+deploy.sh
+docker-compose.yml
