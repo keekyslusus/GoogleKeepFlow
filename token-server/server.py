@@ -41,7 +41,7 @@ global_requests = []
 monthly_requests = []
 blocked_ips = {}  # IP -> unblock_timestamp
 challenges = {}
-used_challenges = set()
+used_challenges = {}
 
 # VALIDATION
 EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
@@ -83,6 +83,10 @@ def cleanup_old_requests():
     for token in list(challenges.keys()):
         if challenges[token][1] < now - CHALLENGE_TTL:
             del challenges[token]
+
+    for token in list(used_challenges.keys()):
+        if used_challenges[token] < now - 600:
+            del used_challenges[token]
 
     # TODO: redis with TTL?
 
@@ -170,7 +174,7 @@ def verify_challenge(token, nonce):
 
     if hash_result.startswith('0' * CHALLENGE_DIFFICULTY):
         del challenges[token]
-        used_challenges.add(token)  # mark as used
+        used_challenges[token] = time.time()
         return True, "Valid"
 
     return False, "Invalid solution"
@@ -311,6 +315,7 @@ def stats():
         'unique_ips_today': len(ip_requests),
         'blocked_ips': len(blocked_ips),
         'active_challenges': len(challenges),
+        'used_challenges': len(used_challenges),
         'limits': {
             'daily_remaining': ABSOLUTE_DAILY_LIMIT - len(global_requests),
             'monthly_remaining': ABSOLUTE_MONTHLY_LIMIT - len(monthly_requests)
