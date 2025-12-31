@@ -4,7 +4,7 @@
   "Name": "GoogleKeepFlow",
   "Description": "Add and browse notes in Google Keep",
   "Author": "keekys",
-  "Version": "1.0.0",
+  "Version": "1.0.1",
   "Language": "python",
   "Website": "https://github.com/keekyslusus/GoogleKeepFlow",
   "IcoPath": "keep.png",

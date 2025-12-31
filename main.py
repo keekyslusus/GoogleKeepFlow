@@ -135,9 +135,11 @@ class GoogleKeepPlugin(Flox):
 
     def add_note(self, email, master_token, text):
         self.logger.info(f"Adding note: {text[:50]}...")
-        
+
         worker_script = plugindir / "sync_worker.py"
-        
+        # checkbox returns boolean, convert to string for subprocess
+        show_notifications = str(self.settings.get('show_notifications', True))
+
         try:
             startupinfo = None
             creationflags = 0
@@ -146,9 +148,9 @@ class GoogleKeepPlugin(Flox):
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = subprocess.SW_HIDE
                 creationflags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
-            
+
             subprocess.Popen(
-                [sys.executable, str(worker_script), email, master_token, text],
+                [sys.executable, str(worker_script), email, master_token, text, show_notifications],
                 startupinfo=startupinfo,
                 creationflags=creationflags,
                 start_new_session=True,

@@ -1,2 +1,3 @@
 gkeepapi
 flox-lib
+winotify

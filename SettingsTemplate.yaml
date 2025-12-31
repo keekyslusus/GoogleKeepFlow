@@ -20,3 +20,9 @@ body:
       label: "Max notes in list:"
       description: "Number of recent notes to show with 'keep list' command (default: 10)"
       defaultValue: "10"
+  - type: checkbox
+    attributes:
+      name: show_notifications
+      label: "Show notifications"
+      description: "Show Windows toast notifications when notes are created or failed"
+      defaultValue: true
