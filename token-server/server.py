@@ -45,7 +45,7 @@ used_challenges = {}
 
 # VALIDATION
 EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-APP_PASSWORD_REGEX = re.compile(r'^[a-z]{16}$')  # Google app passwords are 16 lowercase letters
+ANDROID_ID_REGEX = re.compile(r'^[0-9a-fA-F]{16}$')
 
 
 def get_client_ip():
@@ -186,11 +186,17 @@ def validate_email(email):
     return EMAIL_REGEX.match(email) is not None
 
 
-def validate_app_password(password):
-    if not password:
+def validate_oauth_token(token):
+    if not token:
         return False
-    clean = password.replace(' ', '').lower()
-    return len(clean) == 16 and clean.isalpha()
+    token = token.strip()
+    # EmbeddedSetup currently returns a compact cookie value. Keep the accepted
+    # shape broad because Google changes token prefixes more often than formats.
+    return 10 <= len(token) <= 4096 and re.match(r'^[A-Za-z0-9._~+/=-]+$', token) is not None
+
+
+def generate_android_id():
+    return secrets.token_hex(8)
 
 @app.route('/')
 def index():
@@ -239,15 +245,19 @@ def get_token():
         return jsonify({'success': False, 'error': 'Invalid request'}), 400
 
     email = str(data.get('email', '')).strip().lower()
-    password = str(data.get('password', '')).replace(' ', '')
+    oauth_token = str(data.get('oauth_token', '')).strip()
+    android_id = str(data.get('android_id', '')).strip().lower() or generate_android_id()
     challenge_token = str(data.get('challenge_token', ''))
     nonce = str(data.get('nonce', ''))
 
     if not validate_email(email):
         return jsonify({'success': False, 'error': 'Invalid email format'}), 400
 
-    if not validate_app_password(password):
-        return jsonify({'success': False, 'error': 'Invalid app password format. Should be 16 letters without spaces.'}), 400
+    if not ANDROID_ID_REGEX.match(android_id):
+        return jsonify({'success': False, 'error': 'Invalid Android ID. Use 16 hex characters or leave it empty.'}), 400
+
+    if not validate_oauth_token(oauth_token):
+        return jsonify({'success': False, 'error': 'Invalid oauth_token cookie value.'}), 400
 
     valid, msg = verify_challenge(challenge_token, nonce)
     if not valid:
@@ -259,7 +269,14 @@ def get_token():
     try:
         log.info(f"Token request from {ip} for {email[:3]}***@{email.split('@')[1] if '@' in email else '?'}")
 
-        res = gpsoauth.perform_master_login(email, password, "")
+        if not hasattr(gpsoauth, 'exchange_token'):
+            log.error("Installed gpsoauth does not support exchange_token")
+            return jsonify({
+                'success': False,
+                'error': 'Server uses an old gpsoauth version. Rebuild the token-server image.'
+            }), 500
+
+        res = gpsoauth.exchange_token(email, oauth_token, android_id)
 
         if 'Token' in res:
             log.info(f"Token generated successfully for {ip}")
@@ -267,19 +284,20 @@ def get_token():
             ip_failed_attempts[ip] = 0
             return jsonify({
                 'success': True,
-                'master_token': res['Token']
+                'master_token': res['Token'],
+                'android_id': android_id
             })
         elif res.get('Error') == 'NeedsBrowser':
             record_failed_attempt(ip)
             return jsonify({
                 'success': False,
-                'error': 'Google requires browser verification. Try creating a new App Password.'
+                'error': 'Google requires browser verification. Open EmbeddedSetup again and copy a fresh oauth_token cookie.'
             })
         elif res.get('Error') == 'BadAuthentication':
             record_failed_attempt(ip)
             return jsonify({
                 'success': False,
-                'error': 'Invalid credentials. Make sure 2FA is enabled and you\'re using a valid App Password.'
+                'error': 'Invalid or expired oauth_token. Open EmbeddedSetup again and copy a fresh cookie value.'
             })
         else:
             error = res.get('Error', 'Unknown error')

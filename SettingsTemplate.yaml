@@ -13,7 +13,7 @@ body:
   - type: textBlock
     attributes:
       name: description
-      description: "Get master token at gkeeptokengenerator.duckdns.org\nrequires gmail app password with 2FA enabled."
+      description: "Get master token at gkeeptokengenerator.duckdns.org\nUse the EmbeddedSetup oauth_token flow. The final token should start with aas_et/."
   - type: input
     attributes:
       name: max_notes_to_show

@@ -158,7 +158,7 @@ function showError(message) {
 document.getElementById('tokenForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value.replace(/\s/g, '');
+    const oauthToken = document.getElementById('oauthToken').value.trim();
     const btn = document.getElementById('submitBtn');
     const result = document.getElementById('result');
 
@@ -183,7 +183,7 @@ document.getElementById('tokenForm').addEventListener('submit', async (e) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 email: email,
-                password: password,
+                oauth_token: oauthToken,
                 challenge_token: challengeData.token,
                 nonce: nonce
             })

@@ -19,12 +19,12 @@
         <div class="steps">
             <strong>
                 <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 18px; margin-right: 4px;">vpn_key</span>
-                Create App Password
+                Get EmbeddedSetup token
             </strong>
             <ol>
-                <li>Go to <a href="https://myaccount.google.com/apppasswords" target="_blank">Google App Passwords</a></li>
-                <li>Create new password</li>
-                <li>Copy the 16-character code</li>
+                <li>Open <a href="https://accounts.google.com/EmbeddedSetup" target="_blank">Google EmbeddedSetup</a> and sign in</li>
+                <li>Click I agree if Google asks; an endless loading page is OK</li>
+                <li>Copy the <code>oauth_token</code> cookie value from your browser devtools</li>
             </ol>
         </div>
 
@@ -35,8 +35,8 @@
             </div>
 
             <div class="input-group">
-                <input type="password" id="password" placeholder=" " required>
-                <label for="password">App Password</label>
+                <input type="password" id="oauthToken" placeholder=" " required autocomplete="off">
+                <label for="oauthToken">oauth_token cookie</label>
             </div>
 
             <button type="submit" id="submitBtn">Get Token</button>
