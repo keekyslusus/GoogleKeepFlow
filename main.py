@@ -1,9 +1,9 @@
 import sys
+import json
+import time
 from pathlib import Path
-import webbrowser
 import logging
 from logging.handlers import RotatingFileHandler
-import subprocess
 
 plugindir = Path(__file__).parent.resolve()
 if str(plugindir) not in sys.path:
@@ -12,14 +12,50 @@ lib_path = plugindir / 'lib'
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
 
+LIGHTWEIGHT_METHODS = {
+    "context_menu",
+    "open_link",
+    "open_note",
+}
+
+
+def get_request_method():
+    if len(sys.argv) <= 1:
+        return ""
+    try:
+        request = json.loads(sys.argv[1])
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return ""
+    return str(request.get("method", ""))
+
+
+if __name__ == "__main__" and get_request_method() in LIGHTWEIGHT_METHODS:
+    from googlekeepflow.keep_context_menu import GoogleKeepContextMenuPlugin
+
+    GoogleKeepContextMenuPlugin().run()
+    raise SystemExit(0)
+
 from flox import Flox
-import gkeepapi
+import googlekeepflow.keep_actions as keep_actions
+import googlekeepflow.keep_listing as keep_listing
+from googlekeepflow.keep_auth_service import get_auth, secure_settings_dir
+from googlekeepflow.keep_commands import handle_query
+from googlekeepflow.keep_notes import create_keep_client, sync_keep_client
+from googlekeepflow.keep_results import add_empty_notes_result, add_to_keep_subtitle, note_icon, note_preview_and_labels, render_cached_notes, render_live_notes
+from googlekeepflow.keep_setup_launcher import start_setup_helper
+from googlekeepflow.keep_urls import open_note_url
+
+
+KEEP_SYNC_TTL_SECONDS = 15
 
 
 class GoogleKeepPlugin(Flox):
     def __init__(self):
         super().__init__()
         self.keep = None
+        self.keep_email = ""
+        self.keep_token = ""
+        self.keep_last_sync_at = 0
 
         for handler in self.logger.handlers[:]:
             self.logger.removeHandler(handler)
@@ -33,163 +69,133 @@ class GoogleKeepPlugin(Flox):
         log_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
         self.logger.addHandler(log_handler)
         self.logger.setLevel(logging.INFO)
+        self.icons = {
+            "add_archive": "icons/add_archive.png",
+            "add_note": "icons/add_note.png",
+            "archive": "icons/archive.png",
+            "checklist": "icons/checklist.png",
+            "default": "keep.png",
+            "edit_note": "icons/edit_note.png",
+            "list": "icons/list.png",
+            "open_website": "icons/open_website.png",
+            "pin": "icons/pin.png",
+            "reminder": "icons/reminder.png",
+            "restore_archive": "icons/unarchive.png",
+            "setup": "icons/setup.png",
+            "trash": "icons/trash.png",
+            "unpin": "icons/unpin.png",
+        }
+
+    def get_auth(self):
+        return get_auth(self.settings, self.secure_settings_dir(), self.logger)
+
+    def secure_settings_dir(self):
+        return secure_settings_dir(plugindir, self.settings_path)
+
+    def keep_client(self, email, master_token):
+        if self.keep is None or self.keep_email != email or self.keep_token != master_token:
+            self.keep = create_keep_client(email, master_token, self.logger)
+            self.keep_email = email
+            self.keep_token = master_token
+            self.keep_last_sync_at = 0
+        return self.keep
+
+    def synced_keep_client(self, email, master_token, force=False):
+        keep = self.keep_client(email, master_token)
+        should_sync = force or time.time() - self.keep_last_sync_at > KEEP_SYNC_TTL_SECONDS
+        if should_sync:
+            sync_keep_client(keep, self.logger)
+            self.keep_last_sync_at = time.time()
+        return keep
 
     def query(self, query_text):
-        email = self.settings.get('email', '').strip()
-        master_token = self.settings.get('master_token', '').strip()
+        handle_query(self, query_text)
 
-        if not email or not master_token:
-            self.add_item(
-                title="GoogleKeepFlow not configured",
-                subtitle="Open plugin settings to configure email and master token",
-                icon="keep.png"
-            )
-            self.add_item(
-                title="Get Master Token",
-                subtitle="Click to open token generator website gkeeptokengenerator.duckdns.org",
-                icon="keep.png",
-                method=self.open_token_generator,
-                parameters=[]
-            )
-            return
-
-        if not query_text.strip():
-            self.add_item(
-                title="GoogleKeepFlow",
-                subtitle="Type text to add as a note, or 'list' to view recent notes",
-                icon="keep.png"
-            )
-            return
-
-        if query_text.strip().lower() == 'list':
-            self.list_notes(email, master_token)
-            return
-
+    def add_note_result(self, text, pinned=False, archived=False, list_note=False, reminder_at_iso="", reminder_title_due="", reminder_subtitle_due=""):
+        action = f"reminder {reminder_title_due}" if reminder_at_iso and reminder_title_due else "reminder" if reminder_at_iso else "checklist" if list_note else "pinned note" if pinned else "archived note" if archived else "note"
+        preview, labels = note_preview_and_labels(text, list_note)
+        if list_note:
+            icon = self.icons["checklist"]
+        elif reminder_at_iso:
+            icon = self.icons["reminder"]
+        elif archived:
+            icon = self.icons["add_archive"]
+        elif pinned:
+            icon = self.icons["pin"]
+        else:
+            icon = self.icons["add_note"]
         self.add_item(
-            title=f"Add note: {query_text}",
-            subtitle="Press Enter to add to Google Keep",
-            icon="keep.png",
+            title=f"Add {action}: {preview}",
+            subtitle=add_to_keep_subtitle(labels, prefix=f"Reminder {reminder_subtitle_due}" if reminder_at_iso and reminder_subtitle_due else ""),
+            icon=icon,
             method=self.add_note,
-            parameters=[email, master_token, query_text]
+            parameters=[text, pinned, archived, list_note, reminder_at_iso]
         )
 
-    def list_notes(self, email, master_token):
-        self.logger.info("Listing notes...")
-
+    def current_keyword(self):
         try:
-            max_notes = int(self.settings.get('max_notes_to_show', '10'))
-        except:
-            max_notes = 10
+            plugin_settings = self.app_settings.get("PluginSettings", {}).get("Plugins", {}).get(self.id, {})
+        except (AttributeError, TypeError) as exc:
+            self.logger.debug("Failed to read plugin keyword from app settings: %s: %s", type(exc).__name__, exc)
+            plugin_settings = {}
 
-        try:
-            keep = gkeepapi.Keep()
-            keep.authenticate(email, master_token, sync=True)
-            self.logger.info("Loaded notes successfully")
+        for setting_name in ("UserKeywords", "ActionKeywords"):
+            keywords = plugin_settings.get(setting_name)
+            if isinstance(keywords, list):
+                for keyword in keywords:
+                    normalized = str(keyword or "").strip()
+                    if normalized:
+                        return normalized
+            else:
+                normalized = str(keywords or "").strip()
+                if normalized:
+                    return normalized
 
-            all_notes = keep.all()
-            notes = sorted([n for n in all_notes if not n.trashed and not n.archived],
-                          key=lambda x: x.timestamps.updated,
-                          reverse=True)[:max_notes]
+        return str(getattr(self, "user_keyword", "") or getattr(self, "action_keyword", "") or "keep").strip()
 
-            if not notes:
-                self.add_item(
-                    title="No notes found",
-                    subtitle="Create your first note!",
-                    icon="keep.png"
-                )
-                return
+    def list_notes(self, email, master_token, archived=False, search_text="", edit_mode=False):
+        keep_listing.list_notes(self, plugindir, email, master_token, archived, search_text, edit_mode)
 
-            for note in notes:
-                if note.title:
-                    title = note.title.replace('\n', ' ').strip()
-                    subtitle = note.text.replace('\n', ' | ').strip()[:100]
-                    if len(note.text) > 100:
-                        subtitle += "..."
-                else:
-                    lines = note.text.split('\n')
-                    title = lines[0][:50].strip()
-                    if len(lines[0]) > 50:
-                        title += "..."
-                    if len(lines) > 1:
-                        subtitle = ' | '.join(lines[1:])[:100].strip()
-                        if len(' '.join(lines[1:])) > 100:
-                            subtitle += "..."
-                    else:
-                        subtitle = "Click to open in Google Keep"
+    def add_empty_notes_result(self, archived=False, search_text=""):
+        add_empty_notes_result(self, self.icons, archived, search_text)
 
-                self.add_item(
-                    title=title,
-                    subtitle=subtitle if subtitle else "Click to open in Google Keep",
-                    icon="keep.png",
-                    method=self.open_note,
-                    parameters=[note.id]
-                )
+    def render_cached_notes(self, notes, archived=False, search_text="", edit_mode=False):
+        render_cached_notes(self, self.icons, notes, archived, search_text, edit_mode)
 
-        except Exception as e:
-            self.logger.error(f"Failed to list notes: {type(e).__name__}: {e}")
-            self.add_item(
-                title="Failed to load notes",
-                subtitle=str(e),
-                icon="keep.png"
-            )
+    def note_icon(self, archived=False, pinned=False, checklist=False):
+        return note_icon(self.icons, archived, pinned, checklist)
 
-    def add_note(self, email, master_token, text):
-        self.logger.info(f"Adding note: {text[:50]}...")
+    def render_live_notes(self, notes, archived=False, search_text="", labels_by_id=None, edit_mode=False):
+        render_live_notes(self, self.icons, notes, archived, search_text, labels_by_id, edit_mode)
 
-        worker_script = plugindir / "sync_worker.py"
-        # checkbox returns boolean, convert to string for subprocess
-        show_notifications = str(self.settings.get('show_notifications', True))
-
-        try:
-            startupinfo = None
-            creationflags = 0
-            if sys.platform == 'win32':
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-                creationflags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
-
-            subprocess.Popen(
-                [sys.executable, str(worker_script), email, master_token, text, show_notifications],
-                startupinfo=startupinfo,
-                creationflags=creationflags,
-                start_new_session=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL
-            )
-            self.logger.info("Sync worker started")
-            return "Note added!"
-        except Exception as e:
-            self.logger.error(f"Failed to start sync worker: {type(e).__name__}: {e}")
-            return f"Failed: {str(e)}"
-
-    def authenticate(self, email, master_token):
-        if self.keep is not None:
-            return True
-
-        if not email or not master_token:
-            return False
-
-        try:
-            self.keep = gkeepapi.Keep()
-            self.keep.authenticate(email, master_token, sync=False)
-            self.logger.info("Authentication successful")
-            return True
-        except Exception as e:
-            self.logger.error(f"Authentication failed: {type(e).__name__}: {e}")
-            self.keep = None
-            return False
+    def add_note(self, text, pinned=False, archived=False, list_note=False, reminder_at_iso=""):
+        return keep_actions.add_note(self, plugindir, text, pinned, archived, list_note, reminder_at_iso)
 
     def open_note(self, note_id):
         self.logger.info(f"Opening note: {note_id}")
-        url = f"https://keep.google.com/u/0/#NOTE/{note_id}"
-        webbrowser.open(url)
+        open_note_url(note_id)
         return "Opening note in browser..."
 
-    def open_token_generator(self):
-        webbrowser.open('https://gkeeptokengenerator.duckdns.org')
-        return "Opening token generator in browser..."
+    def set_note_archived(self, note_id, archived):
+        return keep_actions.set_note_archived(self, plugindir, note_id, archived)
+
+    def set_note_pinned(self, note_id, pinned):
+        return keep_actions.set_note_pinned(self, plugindir, note_id, pinned)
+
+    def move_note_to_trash(self, note_id):
+        return keep_actions.move_note_to_trash(self, plugindir, note_id)
+
+    def edit_note_external(self, note_id):
+        return keep_actions.edit_note_external(self, plugindir, note_id)
+
+    def open_webview_setup(self, email=''):
+        try:
+            debug_webview = keep_actions.parse_bool(self.settings.get("debug_webview", False))
+            start_setup_helper(plugindir, email, self.secure_settings_dir(), self.logger, debug_webview=debug_webview)
+            return "Opening GoogleKeepFlow setup..."
+        except Exception as e:
+            self.logger.error(f"Failed to start setup: {type(e).__name__}: {e}")
+            return f"Failed: {str(e)}"
 
 if __name__ == "__main__":
     GoogleKeepPlugin().run()

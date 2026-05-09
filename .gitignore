@@ -1,0 +1,9 @@
+/lib
+/__pycache__
+Godot_v4.5-beta5_win64.exe
+/googlekeepflow/__pycache__
+/maximiallianmus_cod_videos
+/scripts/__pycache__
+.minecraft
+/tests/__pycache__
+*.log

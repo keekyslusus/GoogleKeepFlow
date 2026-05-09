@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   push:
-    branches: [ main ]
+    branches: [ main, master ]
     paths-ignore:
       - '.github/workflows/*'
 
@@ -38,6 +38,19 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r ./requirements.txt -t ./lib --no-deps
         pip install gpsoauth requests -t ./lib
+
+    - name: Patch pywebview for Flow Launcher embedded Python
+      run: |
+        $webview2Version = "1.0.3856.49"
+        curl.exe -L -o webview2.nupkg "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$webview2Version"
+        Copy-Item webview2.nupkg webview2.zip -Force
+        Expand-Archive -Force webview2.zip webview2
+        Copy-Item webview2\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.Core.dll lib\webview\lib\Microsoft.Web.WebView2.Core.dll -Force
+        Copy-Item webview2\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.WinForms.dll lib\webview\lib\Microsoft.Web.WebView2.WinForms.dll -Force
+        python scripts\patch_pywebview_windows.py
+        Remove-Item -Recurse -Force webview2
+        Remove-Item -Force webview2.nupkg, webview2.zip
+      shell: powershell
 
     - name: Create plugin archive
       run: |

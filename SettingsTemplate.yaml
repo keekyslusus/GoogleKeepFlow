@@ -1,28 +1,29 @@
 body:
-  - type: input
-    attributes:
-      name: email
-      label: "Gmail address:"
-      description: "Enter your gmail address"
-      defaultValue: ""
-  - type: input
-    attributes:
-      name: master_token
-      label: "Master token:"
-      defaultValue: ""
   - type: textBlock
     attributes:
       name: description
-      description: "Get master token at gkeeptokengenerator.duckdns.org\nUse the EmbeddedSetup oauth_token flow. The final token should start with aas_et/."
+      description: "Run `keep setup` to sign in with Google. Token will be encrypted with DPAPI."
   - type: input
     attributes:
       name: max_notes_to_show
       label: "Max notes in list:"
-      description: "Number of recent notes to show with 'keep list' command (default: 10)"
-      defaultValue: "10"
+      description: "Number of recent notes to show (default: 20)"
+      defaultValue: "20"
   - type: checkbox
     attributes:
       name: show_notifications
       label: "Show notifications"
-      description: "Show Windows toast notifications when notes are created or failed"
+      description: "Show Windows toast notifications"
       defaultValue: true
+  - type: checkbox
+    attributes:
+      name: experimental_reminders
+      label: "[experimental] Reminder feature"
+      description: "Enable experimental Google Keep reminders. Uses internal Keep Web endpoints and may break if Google changes them."
+      defaultValue: false
+  - type: checkbox
+    attributes:
+      name: debug_webview
+      label: "[debug] Devtools for webview"
+      description: "Enable pywebview debug/devtools for the GoogleKeepFlow setup window."
+      defaultValue: false
