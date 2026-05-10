@@ -5,21 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WINFORMS_FILE = ROOT / "lib" / "webview" / "platforms" / "winforms.py"
 
 
-def replace_once(text, old, new):
-    if old not in text:
-        raise RuntimeError(f"Patch marker not found: {old!r}")
-    return text.replace(old, new, 1)
-
-
-def main():
-    text = WINFORMS_FILE.read_text(encoding="utf-8")
-
-    text = replace_once(
-        text,
-        "clr.AddReference('System.Reflection')",
-        "clr.AddReference('System.Reflection')\nclr.AddReference('Microsoft.Win32.SystemEvents')",
-    )
-
+def patch_winforms_text(text):
     start = text.index("class OpenFolderDialog:")
     end = text.index("_main_window_created = Event()", start)
     replacement = """class OpenFolderDialog:
@@ -37,7 +23,12 @@ def main():
 
 
 """
-    text = text[:start] + replacement + text[end:]
+    return text[:start] + replacement + text[end:]
+
+
+def main():
+    text = WINFORMS_FILE.read_text(encoding="utf-8")
+    text = patch_winforms_text(text)
     WINFORMS_FILE.write_text(text, encoding="utf-8", newline="\n")
 
 

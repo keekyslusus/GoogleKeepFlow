@@ -39,7 +39,6 @@ RESULT_FILE = plugindir / "token_setup_result.json"
 LOG_FILE = plugindir / "log_setup.log"
 WEBVIEW_USER_DATA = plugindir / ".webview2-setup-profile"
 SETUP_ICON_FILE = plugindir / "icons" / "ico" / "setup.ico"
-PYTHONNET_RUNTIME_CONFIG_FILE = plugindir / "pythonnet_webview.runtimeconfig.json"
 DEBUG_WEBVIEW = False
 
 logger = logging.getLogger("token_setup_webview")
@@ -84,24 +83,8 @@ def create_setup_window(webview):
 
 
 def configure_pythonnet_runtime():
-    runtime_config = {
-        "runtimeOptions": {
-            "tfm": "net6.0",
-            "framework": {
-                "name": "Microsoft.WindowsDesktop.App",
-                "version": "6.0.0",
-            },
-            "rollForward": "LatestMajor",
-        }
-    }
-    PYTHONNET_RUNTIME_CONFIG_FILE.write_text(
-        json.dumps(runtime_config, ensure_ascii=True, indent=2),
-        encoding="utf-8",
-    )
-    os.environ.setdefault("PYTHONNET_RUNTIME", "coreclr")
-    os.environ.setdefault("PYTHONNET_CORECLR_RUNTIME_CONFIG", str(PYTHONNET_RUNTIME_CONFIG_FILE))
+    os.environ.setdefault("PYTHONNET_RUNTIME", "netfx")
     logger.info("Using pythonnet runtime: %s", os.environ.get("PYTHONNET_RUNTIME"))
-    logger.info("Using pythonnet runtime config: %s", os.environ.get("PYTHONNET_CORECLR_RUNTIME_CONFIG"))
 
 
 def cleanup_webview_profile(window):

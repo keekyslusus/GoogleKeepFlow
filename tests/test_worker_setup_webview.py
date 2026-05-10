@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from googlekeepflow.worker_setup_webview import parse_bool
+from googlekeepflow.worker_setup_webview import configure_pythonnet_runtime, parse_bool
 
 
 class WorkerSetupWebviewTests(unittest.TestCase):
@@ -16,6 +17,21 @@ class WorkerSetupWebviewTests(unittest.TestCase):
         self.assertFalse(parse_bool("0"))
         self.assertFalse(parse_bool("false"))
         self.assertFalse(parse_bool(""))
+
+    def test_configure_pythonnet_runtime_uses_netfx_by_default(self):
+        with patch.dict("os.environ", {}, clear=True):
+            configure_pythonnet_runtime()
+            import os
+
+            self.assertEqual(os.environ["PYTHONNET_RUNTIME"], "netfx")
+            self.assertNotIn("PYTHONNET_CORECLR_RUNTIME_CONFIG", os.environ)
+
+    def test_configure_pythonnet_runtime_keeps_explicit_runtime(self):
+        with patch.dict("os.environ", {"PYTHONNET_RUNTIME": "coreclr"}, clear=True):
+            configure_pythonnet_runtime()
+            import os
+
+            self.assertEqual(os.environ["PYTHONNET_RUNTIME"], "coreclr")
 
 
 if __name__ == "__main__":

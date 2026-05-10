@@ -45,8 +45,8 @@ jobs:
         curl.exe -L -o webview2.nupkg "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$webview2Version"
         Copy-Item webview2.nupkg webview2.zip -Force
         Expand-Archive -Force webview2.zip webview2
-        Copy-Item webview2\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.Core.dll lib\webview\lib\Microsoft.Web.WebView2.Core.dll -Force
-        Copy-Item webview2\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.WinForms.dll lib\webview\lib\Microsoft.Web.WebView2.WinForms.dll -Force
+        Copy-Item webview2\lib\net462\Microsoft.Web.WebView2.Core.dll lib\webview\lib\Microsoft.Web.WebView2.Core.dll -Force
+        Copy-Item webview2\lib\net462\Microsoft.Web.WebView2.WinForms.dll lib\webview\lib\Microsoft.Web.WebView2.WinForms.dll -Force
         python scripts\patch_pywebview_windows.py
         Remove-Item -Recurse -Force webview2
         Remove-Item -Force webview2.nupkg, webview2.zip
