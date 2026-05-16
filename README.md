@@ -50,17 +50,17 @@
 - Opens the selected note directly in Google Keep
 
 
-### External editing
-
-- `keep edit [search]` to search notes and open the selected note in your text editor
-- Save the `.txt` file to sync changes back to Google Keep
-
-
 ### Checklists
 <img src=".github/todo.png" width="550">
 
 - `keep todo [item 1; item 2]` to create a Google Keep checklist
 - Separate checklist items with semicolons
+
+
+### External editing
+
+- `keep edit [search]` to search notes and open the selected note in your text editor
+- Save the `.txt` file to sync changes back to Google Keep
 
 
 ### Archive
@@ -76,6 +76,12 @@
 - `keep pin [text]` to create a pinned note
 - Pin or unpin existing notes from the context menu
 
+
+### Send image from Clipboard
+<img src=".github/clipboard.png" width="550">
+
+- Copy an image and select Send clipboard image
+- Type after `[image]` to add note text
 
 ### Reminders
 <img src=".github/reminder.png" width="550">
@@ -108,8 +114,4 @@
 
 ## Installation
 
-type `pm install GoogleKeepFlow by keekys` in Flow Launcher
-
-or
-
-Unzip [archive](https://github.com/keekyslusus/GoogleKeepFlow/releases/latest) to `%appdata%\FlowLauncher\Plugins`
+type `pm install GoogleKeepFlow` in Flow Launcher

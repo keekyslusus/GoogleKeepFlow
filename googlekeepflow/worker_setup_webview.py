@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import json
 import logging
 import os
@@ -29,11 +28,14 @@ from googlekeepflow.keep_setup_google import (
     mask_email,
 )
 from googlekeepflow.keep_setup_notifications import (
+    is_pythonnet_runtime_error,
     is_webview2_runtime_error,
     show_message,
+    show_manual_install_notice,
     show_notification,
     show_webview2_missing_notice,
 )
+from googlekeepflow.keep_values import parse_bool
 
 RESULT_FILE = plugindir / "token_setup_result.json"
 LOG_FILE = plugindir / "log_setup.log"
@@ -47,12 +49,6 @@ if not logger.handlers:
     handler = RotatingFileHandler(LOG_FILE, maxBytes=512 * 1024, backupCount=1, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     logger.addHandler(handler)
-
-
-def parse_bool(value):
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 def cleanup_path(path):
@@ -290,6 +286,16 @@ def main():
                 "error": "Microsoft Edge WebView2 Runtime is not installed.",
             })
             show_webview2_missing_notice(plugindir, logger)
+            return 1
+
+        if is_pythonnet_runtime_error(exc):
+            save_result({
+                "success": False,
+                "email": email_holder.get("email", ""),
+                "error": f"{type(exc).__name__}: {exc}",
+                "hint": "This may happen if the plugin folder was copied into Flow Launcher plugins manually.",
+            })
+            show_manual_install_notice(LOG_FILE)
             return 1
 
         save_result({

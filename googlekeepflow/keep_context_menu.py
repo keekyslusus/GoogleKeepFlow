@@ -35,6 +35,7 @@ class GoogleKeepContextMenuPlugin(Flox):
             "restore_archive": "icons/unarchive.png",
             "trash": "icons/trash.png",
             "unpin": "icons/unpin.png",
+            "clipboard": "icons/clipboard.png",
         }
 
     def open_note(self, note_id):
@@ -61,6 +62,16 @@ class GoogleKeepContextMenuPlugin(Flox):
 
         if data.get("type") == "keep_launcher":
             self.add_keep_launcher_items()
+            return
+
+        if data.get("type") == "clipboard_image":
+            self.add_item(
+                title="Send image without text",
+                subtitle="Send the current clipboard image to Google Keep",
+                icon=self.icons["clipboard"],
+                method="send_clipboard_image_now",
+                parameters=[],
+            )
             return
 
         if data.get("type") != "keep_note":

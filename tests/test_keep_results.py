@@ -1,6 +1,6 @@
 import unittest
 
-from googlekeepflow.keep_results import add_to_keep_subtitle, note_preview_and_labels, render_cached_notes
+from googlekeepflow.keep_results import add_to_keep_subtitle, keep_action_subtitle, note_preview_and_labels, render_cached_notes
 
 
 class FakePlugin:
@@ -30,6 +30,11 @@ class KeepResultsTests(unittest.TestCase):
         subtitle = add_to_keep_subtitle(["work", "ideas"], prefix="Reminder today 09:00")
 
         self.assertEqual(subtitle, "Reminder today 09:00 \u2022 Add to Google Keep with labels #work #ideas")
+
+    def test_keep_action_subtitle_reuses_label_suffix(self):
+        subtitle = keep_action_subtitle("Send [image] with this text to Google Keep", ["bro"])
+
+        self.assertEqual(subtitle, "Send [image] with this text to Google Keep with label #bro")
 
     def test_edit_mode_results_open_external_editor_with_edit_icon(self):
         plugin = FakePlugin()

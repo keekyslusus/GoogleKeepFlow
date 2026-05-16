@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import sys
 from pathlib import Path
 import logging
@@ -17,6 +16,7 @@ if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
 
 import gkeepapi
+from gkeepapi import node as keep_node
 from googlekeepflow.keep_auth_store import load_auth, protect_bytes, unprotect_bytes
 from googlekeepflow.keep_cache import save_cache
 from googlekeepflow.keep_reminders import ReminderError, create_keep_reminder
@@ -25,6 +25,7 @@ from googlekeepflow.worker_auth import load_worker_auth
 USER_WANTS_NOTIFICATIONS = True
 SORT_STEP = 1048576
 NOTE_JOB_PATTERN = "google_keep_note_job_*.bin"
+LOCK_STALE_SECONDS = 10 * 60
 
 log_handler = RotatingFileHandler(
     plugindir / "log_worker.log",
@@ -46,12 +47,13 @@ except ImportError:
 
 
 class FileLock:
-    def __init__(self, lock_file):
+    def __init__(self, lock_file, stale_seconds=LOCK_STALE_SECONDS):
         self.lock_file = Path(lock_file)
+        self.stale_seconds = stale_seconds
         self.fd = None
-    
+
     def acquire(self, timeout=0):
-        # OS-level exclusive lock with stale lock detection (60sec timeout)
+        # OS-level exclusive lock with stale lock detection.
         start = time.time()
         while True:
             try:
@@ -60,7 +62,7 @@ class FileLock:
                 return True
             except FileExistsError:
                 try:
-                    if time.time() - self.lock_file.stat().st_mtime > 60:
+                    if time.time() - self.lock_file.stat().st_mtime > self.stale_seconds:
                         logger.warning("Removing stale lock file")
                         self.lock_file.unlink()
                         continue
@@ -70,7 +72,15 @@ class FileLock:
                 if timeout == 0 or (time.time() - start) >= timeout:
                     return False
                 time.sleep(0.1)
-    
+
+    def heartbeat(self):
+        if self.fd is None:
+            return
+        try:
+            os.utime(self.lock_file, None)
+        except OSError as exc:
+            logger.debug("Failed to update lock heartbeat %s: %s: %s", self.lock_file, type(exc).__name__, exc)
+
     def release(self):
         if self.fd is not None:
             try:
@@ -99,15 +109,22 @@ def save_queue(queue_file, queue):
     try:
         queue_file = Path(queue_file)
         queue_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp_file = queue_file.with_suffix(".tmp")
         raw = json.dumps(queue, ensure_ascii=False).encode("utf-8")
-        queue_file.write_bytes(protect_bytes(raw))
+        tmp_file.write_bytes(protect_bytes(raw))
+        tmp_file.replace(queue_file)
     except Exception as e:
         logger.error(f"Failed to save queue: {e}")
+        raise
 
 
 def load_job(job_file):
     job_path = Path(job_file)
-    raw = unprotect_bytes(job_path.read_bytes()).decode("utf-8")
+    data = job_path.read_bytes()
+    try:
+        raw = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raw = unprotect_bytes(data).decode("utf-8")
     job = json.loads(raw)
     if not isinstance(job, dict):
         raise ValueError("Invalid note job")
@@ -180,19 +197,41 @@ def queue_pending_jobs(queue_file, jobs, active_email):
 
 def add_job_to_queue(queue_file, job):
     queue = load_queue(queue_file)
-    queue.append({
-        'email': normalize_email(job.get("email", "")),
-        'type': "list" if job.get("type") == "list" else "note",
-        'text': str(job.get("text", "") or ""),
-        'items': [str(item or "").strip() for item in job.get("items", []) if str(item or "").strip()],
-        'labels': normalize_labels(job.get("labels", [])),
-        'pinned': bool(job.get("pinned", False)),
-        'archived': bool(job.get("archived", False)),
-        'reminder_at': str(job.get("reminder_at", "") or "").strip(),
-        'timestamp': job.get("timestamp", time.time())
-    })
+    if job.get("type") == "image":
+        queue.append(queue_image_item(job))
+    else:
+        queue.append(queue_text_item(job))
     save_queue(queue_file, queue)
     logger.info(f"Added to queue, total items: {len(queue)}")
+
+
+def queue_text_item(item, email=None):
+    return {
+        'email': normalize_email(email if email is not None else item.get("email", "")),
+        'type': "list" if item.get("type") == "list" else "note",
+        'text': str(item.get("text", "") or ""),
+        'items': [str(entry or "").strip() for entry in item.get("items", []) if str(entry or "").strip()],
+        'labels': normalize_labels(item.get("labels", [])),
+        'pinned': bool(item.get("pinned", False)),
+        'archived': bool(item.get("archived", False)),
+        'reminder_at': str(item.get("reminder_at", "") or "").strip(),
+        'timestamp': item.get("timestamp", time.time())
+    }
+
+
+def queue_image_item(item, email=None):
+    return {
+        'email': normalize_email(email if email is not None else item.get("email", "")),
+        'type': "image",
+        'text': str(item.get("text", "") or ""),
+        'labels': normalize_labels(item.get("labels", [])),
+        'mime_type': str(item.get("mime_type", "image/png") or "image/png"),
+        'png_base64': str(item.get("png_base64", "") or ""),
+        'byte_size': int(item.get("byte_size", 0) or 0),
+        'width': int(item.get("width", 0) or 0),
+        'height': int(item.get("height", 0) or 0),
+        'timestamp': item.get("timestamp", time.time())
+    }
 
 
 def next_top_sort_value(keep):
@@ -245,6 +284,10 @@ def success_notification_text(items):
         return "Notes created", f"{len(items)} notes were added to Google Keep"
 
     item = items[0]
+    if item.get("type") == "image":
+        note_text = str(item.get("text", "") or "")
+        preview = note_text[:80] + ("..." if len(note_text) > 80 else "")
+        return "Image note created", preview or "Clipboard image was added to Google Keep"
     note_text = str(item.get("text", "") or "")
     preview = note_text[:80] + ("..." if len(note_text) > 80 else "")
     if item.get("type") == "list":
@@ -258,7 +301,93 @@ def success_notification_text(items):
     return "Note created", preview or "Note was added to Google Keep"
 
 
-def process_queue(queue_file, active_email, active_master_token, settings_dir=None, device_id=None):
+def normalize_queue_item(item, email=None):
+    if item.get("type") == "image":
+        return queue_image_item(item, email=email)
+    return queue_text_item(item, email=email)
+
+
+def upload_keep_image(keep, note, blob, image_item):
+    png_base64 = str(image_item.get("png_base64", "") or "")
+    if not png_base64:
+        raise ValueError("Image payload is empty")
+
+    note_server_id = str(getattr(note, "server_id", "") or "")
+    blob_server_id = str(getattr(blob, "server_id", "") or "")
+    if not note_server_id or not blob_server_id:
+        raise ValueError("Missing server ids for image upload")
+
+    boundary = f"----googlekeepflow{int(time.time() * 1000)}"
+    mime_type = str(image_item.get("mime_type", "image/png") or "image/png")
+    body = (
+        f"--{boundary}\r\n"
+        "Content-Type: application/json; charset=UTF-8\r\n\r\n"
+        "{}\r\n"
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="media"; filename=""\r\n'
+        f"Content-Type: {mime_type}\r\n"
+        "Content-Transfer-Encoding: base64\r\n\r\n"
+        f"{png_base64}\r\n"
+        f"--{boundary}--\r\n"
+    ).encode("ascii")
+    url = (
+        "https://notes-pa.clients6.google.com/upload/notes/v1/media/"
+        f"{blob_server_id}?noteId={note_server_id}"
+    )
+    auth = keep._keep_api.getAuth()
+    headers = {
+        "Authorization": "OAuth " + auth.getAuthToken(),
+        "Content-Type": f"multipart/related; boundary={boundary}",
+    }
+    response = keep._keep_api._session.request("POST", url, data=body, headers=headers)
+    if response.status_code >= 400:
+        raise ValueError(f"Image upload failed: HTTP {response.status_code} {response.text[:120]}")
+    try:
+        return response.json()
+    except ValueError:
+        return {}
+
+
+def create_image_note(keep, image_item, sort_value):
+    note = keep_node.Note()
+    keep.add(note)
+    note.sort = sort_value
+    text = str(image_item.get("text", "") or "")
+    if text:
+        note.text = text
+
+    blob = keep_node.Blob(parent_id=note.id)
+    image = keep_node.NodeImage()
+    image._mimetype = str(image_item.get("mime_type", "image/png") or "image/png")
+    image._width = int(image_item.get("width", 0) or 0)
+    image._height = int(image_item.get("height", 0) or 0)
+    image._byte_size = int(image_item.get("byte_size", 0) or 0)
+    image._extraction_status = "unknown"
+    blob.blob = image
+    blob.sort = 0
+    note.append(blob, True)
+    for label_name in normalize_labels(image_item.get("labels", [])):
+        label = keep.findLabel(label_name, create=True)
+        if label is not None:
+            note.labels.add(label)
+
+    keep.sync()
+    upload_keep_image(keep, note, blob, image_item)
+    image._byte_size = int(image_item.get("byte_size", 0) or 0)
+    image._width = int(image_item.get("width", 0) or 0)
+    image._height = int(image_item.get("height", 0) or 0)
+    image._extraction_status = "unknown"
+    blob.touch(True)
+    keep.sync()
+    return note
+
+
+def pulse(heartbeat):
+    if callable(heartbeat):
+        heartbeat()
+
+
+def process_queue(queue_file, active_email, active_master_token, settings_dir=None, device_id=None, heartbeat=None):
     queue = load_queue(queue_file)
     if not queue:
         logger.info("Queue is empty")
@@ -269,30 +398,10 @@ def process_queue(queue_file, active_email, active_master_token, settings_dir=No
     for item in queue:
         item_email = str(item.get('email', '')).strip().lower()
         if item_email == active_email.strip().lower():
-            items.append({
-                'email': item_email,
-                'type': "list" if item.get("type") == "list" else "note",
-                'text': item.get('text', ''),
-                'items': [str(entry or "").strip() for entry in item.get("items", []) if str(entry or "").strip()],
-                'labels': normalize_labels(item.get('labels', [])),
-                'pinned': bool(item.get('pinned', False)),
-                'archived': bool(item.get('archived', False)),
-                'reminder_at': str(item.get('reminder_at', "") or "").strip(),
-                'timestamp': item.get('timestamp', time.time())
-            })
+            items.append(normalize_queue_item(item, email=item_email))
         else:
             # Keep other accounts queued, but never persist credentials.
-            items_to_keep.append({
-                'email': item_email,
-                'type': "list" if item.get("type") == "list" else "note",
-                'text': item.get('text', ''),
-                'items': [str(entry or "").strip() for entry in item.get("items", []) if str(entry or "").strip()],
-                'labels': normalize_labels(item.get('labels', [])),
-                'pinned': bool(item.get('pinned', False)),
-                'archived': bool(item.get('archived', False)),
-                'reminder_at': str(item.get('reminder_at', "") or "").strip(),
-                'timestamp': item.get('timestamp', time.time())
-            })
+            items_to_keep.append(normalize_queue_item(item, email=item_email))
 
     if not items:
         save_queue(queue_file, items_to_keep)
@@ -302,14 +411,32 @@ def process_queue(queue_file, active_email, active_master_token, settings_dir=No
     logger.info(f"Processing {len(items)} notes for active account")
 
     try:
+        pulse(heartbeat)
         keep = gkeepapi.Keep()
         keep.authenticate(active_email, active_master_token, sync=True, device_id=device_id)
+        pulse(heartbeat)
         next_sort = next_top_sort_value(keep)
         created_notes = []
 
         for item in items:
+            pulse(heartbeat)
+            item_type = str(item.get("type", "note") or "note")
+            if item_type == "image":
+                note = create_image_note(keep, item, next_sort)
+                pulse(heartbeat)
+                next_sort -= 1
+                created_notes.append((item, note, str(item.get("text", "") or "")))
+                logger.info(
+                    "Prepared image note for sync: bytes=%s width=%s height=%s labels=%s",
+                    item.get("byte_size", 0),
+                    item.get("width", 0),
+                    item.get("height", 0),
+                    len(normalize_labels(item.get("labels", []))),
+                )
+                continue
+
             text = str(item.get("text", "") or "")
-            item_type = "list" if item.get("type") == "list" else "note"
+            item_type = "list" if item_type == "list" else "note"
             checklist_items = [str(entry or "").strip() for entry in item.get("items", []) if str(entry or "").strip()]
             labels = normalize_labels(item.get("labels", []))
             if item_type == "list":
@@ -327,11 +454,16 @@ def process_queue(queue_file, active_email, active_master_token, settings_dir=No
             created_notes.append((item, note, text))
             logger.info("Prepared note for sync: type=%s labels=%s", item_type, len(labels))
 
+        pulse(heartbeat)
         keep.sync()
+        pulse(heartbeat)
         logger.info(f"Synced {len(items)} notes successfully")
         reminder_failures = 0
         for item, note, note_text in created_notes:
+            pulse(heartbeat)
             try:
+                if item.get("type") == "image":
+                    continue
                 reminder_at = parse_reminder_at(item.get("reminder_at"))
                 if not reminder_at:
                     continue
@@ -353,7 +485,9 @@ def process_queue(queue_file, active_email, active_master_token, settings_dir=No
 
         if settings_dir:
             try:
+                pulse(heartbeat)
                 save_cache(settings_dir, active_email, keep.all(), logger, labels=keep.labels())
+                pulse(heartbeat)
                 logger.info("Notes cache updated")
             except Exception as exc:
                 logger.warning("Failed to update notes cache: %s: %s", type(exc).__name__, exc)
@@ -381,17 +515,7 @@ def process_queue(queue_file, active_email, active_master_token, settings_dir=No
         )
 
         for item in items:
-            items_to_keep.append({
-                'email': active_email.strip().lower(),
-                'type': "list" if item.get("type") == "list" else "note",
-                'text': item.get('text', ''),
-                'items': [str(entry or "").strip() for entry in item.get("items", []) if str(entry or "").strip()],
-                'labels': normalize_labels(item.get('labels', [])),
-                'pinned': bool(item.get('pinned', False)),
-                'archived': bool(item.get('archived', False)),
-                'reminder_at': str(item.get('reminder_at', "") or "").strip(),
-                'timestamp': item.get('timestamp', time.time())
-            })
+            items_to_keep.append(normalize_queue_item(item, email=active_email.strip().lower()))
         logger.info("Failed notes kept in queue for retry")
 
     save_queue(queue_file, items_to_keep)
@@ -430,10 +554,11 @@ def main():
         metadata, _ = load_auth(settings_dir, logger)
         email, master_token = load_worker_auth(settings_dir)
         queue_pending_jobs(queue_file, jobs, email)
+        lock.heartbeat()
 
         time.sleep(0.3)
 
-        process_queue(queue_file, email, master_token, settings_dir, device_id=metadata.get("android_id"))
+        process_queue(queue_file, email, master_token, settings_dir, device_id=metadata.get("android_id"), heartbeat=lock.heartbeat)
 
     finally:
         lock.release()

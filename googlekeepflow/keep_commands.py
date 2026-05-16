@@ -1,4 +1,6 @@
 from googlekeepflow.keep_help import add_help_results, change_query_action, is_help_query, plugin_query
+from googlekeepflow.keep_clipboard import image_note_text, is_image_note_query
+from googlekeepflow.keep_results import keep_action_subtitle, note_preview_and_labels
 from googlekeepflow.keep_query import (
     ADD_COMMANDS,
     ARCHIVE_COMMANDS,
@@ -11,12 +13,7 @@ from googlekeepflow.keep_query import (
     split_command_query,
 )
 from googlekeepflow.keep_reminder_parser import parse_reminder_details
-
-
-def parse_bool(value):
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in ("1", "true", "yes", "on")
+from googlekeepflow.keep_values import parse_bool
 
 
 def handle_query(plugin, query_text):
@@ -35,6 +32,14 @@ def handle_query(plugin, query_text):
 
     if not query_text.strip():
         add_launcher_result(plugin)
+        return
+
+    if is_image_note_query(query_text):
+        has_pending_image = getattr(plugin, "has_pending_clipboard_image", None)
+        if callable(has_pending_image) and has_pending_image():
+            add_pending_image_result(plugin, image_note_text(query_text))
+        else:
+            add_missing_pending_image_result(plugin)
         return
 
     command, command_text = split_command_query(query_text)
@@ -83,6 +88,43 @@ def add_launcher_result(plugin):
         context={
             "type": "keep_launcher",
         },
+    )
+    has_clipboard_image = getattr(plugin, "has_clipboard_image", None)
+    if callable(has_clipboard_image) and has_clipboard_image():
+        clipboard_icon = getattr(plugin, "clipboard_image_icon", None)
+        icon = clipboard_icon() if callable(clipboard_icon) else plugin.icons["add_note"]
+        plugin.add_item(
+            title="Send clipboard image to Google Keep",
+            subtitle="Attach the current clipboard image, then type note text",
+            icon=icon or plugin.icons["add_note"],
+            method=plugin.begin_clipboard_image_note,
+            parameters=[],
+            dont_hide=True,
+            context={
+                "type": "clipboard_image",
+            },
+        )
+
+
+def add_pending_image_result(plugin, text):
+    pending_icon = getattr(plugin, "pending_clipboard_image_icon", None)
+    icon = pending_icon() if callable(pending_icon) else plugin.icons["add_note"]
+    preview, labels = note_preview_and_labels(text)
+    preview = preview.strip() or "image note"
+    plugin.add_item(
+        title=f"Add image note: {preview}",
+        subtitle=keep_action_subtitle("Send [image] with this text to Google Keep", labels),
+        icon=icon or plugin.icons["add_note"],
+        method=plugin.add_pending_image_note,
+        parameters=[text],
+    )
+
+
+def add_missing_pending_image_result(plugin):
+    plugin.add_item(
+        title="No image attached",
+        subtitle="Use Send clipboard image to attach an image first",
+        icon=plugin.icons.get("warning", plugin.icons.get("clipboard", plugin.icons["add_note"])),
     )
 
 

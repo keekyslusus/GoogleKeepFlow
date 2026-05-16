@@ -1,3 +1,6 @@
+from googlekeepflow.keep_clipboard import IMAGE_MARKER
+
+
 HELP_QUERY_ALIASES = {"?"}
 HELP_BASE_SCORE = 1_000_000
 
@@ -28,6 +31,8 @@ def add_help_results(plugin, keyword, icons):
     pin_query = plugin_query(keyword, "pin ")
     todo_query = plugin_query(keyword, "todo ")
     remind_query = plugin_query(keyword, "remind in 10m ")
+    image_query = plugin_query(keyword, IMAGE_MARKER)
+    image_input_query = f"{image_query} "
     setup_query = plugin_query(keyword, "setup")
 
     list_action = change_query_action(plugin, list_query)
@@ -138,6 +143,18 @@ def add_help_results(plugin, keyword, icons):
         auto_complete_text=remind_query,
     )
 
+    image_action = change_query_action(plugin, image_input_query)
+    plugin.add_item(
+        title=image_query,
+        subtitle="Copy an image to the clipboard, then send it to Google Keep",
+        icon=icons["clipboard"],
+        method=image_action["method"],
+        parameters=image_action["parameters"],
+        dont_hide=image_action["dont_hide"],
+        score=HELP_BASE_SCORE - 9,
+        auto_complete_text=image_input_query,
+    )
+
     setup_action = change_query_action(plugin, setup_query)
     plugin.add_item(
         title=setup_query,
@@ -146,7 +163,7 @@ def add_help_results(plugin, keyword, icons):
         method=setup_action["method"],
         parameters=setup_action["parameters"],
         dont_hide=setup_action["dont_hide"],
-        score=HELP_BASE_SCORE - 9,
+        score=HELP_BASE_SCORE - 10,
         auto_complete_text=setup_query,
     )
 

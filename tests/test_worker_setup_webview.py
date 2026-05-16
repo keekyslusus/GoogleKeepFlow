@@ -1,7 +1,9 @@
 import unittest
 from unittest.mock import patch
 
-from googlekeepflow.worker_setup_webview import configure_pythonnet_runtime, parse_bool
+from googlekeepflow.keep_setup_notifications import is_pythonnet_runtime_error
+from googlekeepflow.keep_values import parse_bool
+from googlekeepflow.worker_setup_webview import configure_pythonnet_runtime
 
 
 class WorkerSetupWebviewTests(unittest.TestCase):
@@ -32,6 +34,14 @@ class WorkerSetupWebviewTests(unittest.TestCase):
             import os
 
             self.assertEqual(os.environ["PYTHONNET_RUNTIME"], "coreclr")
+
+    def test_detects_pythonnet_runtime_failure(self):
+        error = RuntimeError(
+            "Failed to resolve Python.Runtime.Loader.Initialize from "
+            "lib\\pythonnet\\runtime\\Python.Runtime.dll"
+        )
+
+        self.assertTrue(is_pythonnet_runtime_error(error))
 
 
 if __name__ == "__main__":

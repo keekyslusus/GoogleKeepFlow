@@ -17,6 +17,17 @@ PREVIEW_LIMIT = 100
 URL_SCHEME_PATTERN = re.compile(r"\bhttps?://", re.IGNORECASE)
 _MEMORY_CACHE = {}
 OPEN_IN_KEEP_TEXT = "Open in Google Keep"
+MEDIA_ORDER = ("image", "audio", "drawing")
+
+
+def media_marker(media_counts):
+    markers = []
+    for media_type in MEDIA_ORDER:
+        count = int((media_counts or {}).get(media_type, 0) or 0)
+        if count <= 0:
+            continue
+        markers.append(f"[{media_type} x{count}]" if count > 1 else f"[{media_type}]")
+    return " ".join(markers)
 
 
 def cache_path(settings_dir, create=False):
@@ -84,26 +95,30 @@ def display_text(text):
     return URL_SCHEME_PATTERN.sub("", str(text or ""))
 
 
-def note_display_text(title, text):
+def note_display_text(title, text, media_counts=None):
     title = str(title or "")
     text = str(text or "")
+    marker = media_marker(media_counts)
 
     if title:
         clean_title = display_text(title.replace("\n", " ").strip())
         subtitle = truncate_preview(" | ".join(preview_lines(text)))
-        return clean_title, subtitle or OPEN_IN_KEEP_TEXT
+        return clean_title, subtitle or marker or OPEN_IN_KEEP_TEXT
 
     lines = preview_lines(text)
     first_line = lines[0] if lines else ""
+    if not first_line and marker:
+        return marker, OPEN_IN_KEEP_TEXT
+
     clean_title = first_line[:50].strip()
     if len(first_line) > 50:
         clean_title += "..."
 
     if len(lines) <= 1:
-        return clean_title, OPEN_IN_KEEP_TEXT
+        return clean_title, marker or OPEN_IN_KEEP_TEXT
 
     subtitle = truncate_preview(" | ".join(lines[1:]))
-    return clean_title, subtitle or OPEN_IN_KEEP_TEXT
+    return clean_title, subtitle or marker or OPEN_IN_KEEP_TEXT
 
 
 def log_cache_event(logger, level, message, *args):
@@ -135,22 +150,33 @@ def label_name_map(labels):
     return {str(getattr(label, "id", "") or ""): str(getattr(label, "name", "") or "") for label in labels or []}
 
 
+def media_counts_for_note(note):
+    return {
+        "image": len(getattr(note, "images", []) or []),
+        "audio": len(getattr(note, "audio", []) or []),
+        "drawing": len(getattr(note, "drawings", []) or []),
+    }
+
+
 def note_to_cache_item(note, labels_by_id=None, logger=None):
-    title, subtitle = note_display_text(getattr(note, "title", ""), getattr(note, "text", ""))
+    media_counts = media_counts_for_note(note)
+    title, subtitle = note_display_text(getattr(note, "title", ""), getattr(note, "text", ""), media_counts)
     text = str(getattr(note, "text", "") or "")
     note_title = str(getattr(note, "title", "") or "")
     label_names = label_names_for_note(note, labels_by_id)
     search_text = f"{note_title}\n{text}".strip()
+    media_text = media_marker(media_counts)
     return {
         "id": str(getattr(note, "id", "") or ""),
         "type": str(getattr(getattr(note, "type", ""), "value", getattr(note, "type", "")) or ""),
         "title": title,
         "subtitle": subtitle,
+        "media": media_counts,
         "labels": label_names,
         "links": extract_links(f"{note_title}\n{text}"),
         "archived": bool(getattr(note, "archived", False)),
         "pinned": bool(getattr(note, "pinned", False)),
-        "search_text": f"{search_text}\n{' '.join(label_names)}".strip()[:SEARCH_TEXT_LIMIT],
+        "search_text": f"{search_text}\n{media_text}\n{' '.join(label_names)}".strip()[:SEARCH_TEXT_LIMIT],
         "updated": note_updated_value(note, logger),
     }
 

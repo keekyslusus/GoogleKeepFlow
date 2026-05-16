@@ -7,12 +7,7 @@ from pathlib import Path
 
 from googlekeepflow.keep_auth_store import protect_bytes
 from googlekeepflow.keep_labels import parse_note_labels
-
-
-def parse_bool(value):
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in ("1", "true", "yes", "on")
+from googlekeepflow.keep_values import parse_bool
 
 
 def start_worker(plugin_dir, script_name, args, logger=None, label="Worker"):
@@ -76,6 +71,36 @@ def start_note_worker(plugin_dir, email, text, pinned=False, archived=False, lis
         "timestamp": time.time(),
     }
     job_file.write_bytes(protect_bytes(json.dumps(job_data, ensure_ascii=False).encode("utf-8")))
+    start_worker(
+        plugin_dir,
+        "worker_sync.py",
+        [job_file, show_notifications, settings_dir or ""],
+        logger,
+        "Sync worker",
+    )
+
+
+def start_image_worker(plugin_dir, email, image_payload, text="", show_notifications=True, logger=None, settings_dir=""):
+    plugin_dir = Path(plugin_dir)
+    settings_dir = Path(settings_dir)
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    job_file = settings_dir / f"google_keep_note_job_{uuid.uuid4().hex}.bin"
+    note_text, labels = parse_note_labels(text)
+    if not note_text and str(text or "").strip():
+        note_text = str(text or "").strip()
+    job_data = {
+        "email": str(email or "").strip().lower(),
+        "type": "image",
+        "text": note_text,
+        "labels": labels,
+        "mime_type": str(image_payload.get("mime_type", "image/png") or "image/png"),
+        "png_base64": str(image_payload.get("png_base64", "") or ""),
+        "byte_size": int(image_payload.get("byte_size", 0) or 0),
+        "width": int(image_payload.get("width", 0) or 0),
+        "height": int(image_payload.get("height", 0) or 0),
+        "timestamp": time.time(),
+    }
+    job_file.write_text(json.dumps(job_data, ensure_ascii=False), encoding="utf-8")
     start_worker(
         plugin_dir,
         "worker_sync.py",

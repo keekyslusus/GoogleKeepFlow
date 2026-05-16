@@ -1,6 +1,6 @@
 import gkeepapi
 
-from googlekeepflow.keep_cache import note_display_text, note_sort_key
+from googlekeepflow.keep_cache import media_counts_for_note, note_display_text, note_sort_key
 from googlekeepflow.keep_labels import label_names_for_note, matches_terms
 
 
@@ -31,7 +31,8 @@ def recent_notes(email, master_token, max_notes=10, logger=None, archived=False)
 
 def note_matches_search(note, search_text="", labels_by_id=None):
     labels = " ".join(label_names_for_note(note, labels_by_id))
-    haystack = f"{getattr(note, 'title', '')}\n{getattr(note, 'text', '')}\n{labels}"
+    media = " ".join(key for key, count in media_counts_for_note(note).items() if count)
+    haystack = f"{getattr(note, 'title', '')}\n{getattr(note, 'text', '')}\n{media}\n{labels}"
     return matches_terms(haystack, search_text)
 
 
@@ -46,5 +47,5 @@ def recent_notes_from_keep(keep, max_notes=10, archived=False, search_text="", l
 
 
 def note_result_text(note):
-    return note_display_text(note.title, note.text)
+    return note_display_text(note.title, note.text, media_counts_for_note(note))
 

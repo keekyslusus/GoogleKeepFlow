@@ -22,9 +22,8 @@ def note_preview_and_labels(text, list_note=False):
     return preview, labels
 
 
-def add_to_keep_subtitle(labels=None, prefix=""):
+def keep_action_subtitle(action, labels=None, prefix=""):
     labels = labels or []
-    action = ADD_TO_KEEP_TEXT
     suffix = label_suffix(labels)
     if suffix:
         label_word = "label" if len(labels) == 1 else "labels"
@@ -34,9 +33,31 @@ def add_to_keep_subtitle(labels=None, prefix=""):
     return action
 
 
-def note_icon(icons, archived=False, pinned=False, checklist=False):
+def add_to_keep_subtitle(labels=None, prefix=""):
+    return keep_action_subtitle(ADD_TO_KEEP_TEXT, labels, prefix)
+
+
+def first_media_type(media=None):
+    media = media or {}
+    for media_type in ("image", "audio", "drawing"):
+        if int(media.get(media_type, 0) or 0) > 0:
+            return media_type
+    return ""
+
+
+def media_icon(icons, media=None):
+    media_type = first_media_type(media)
+    if not media_type:
+        return ""
+    return icons.get(f"contain_{media_type}", "")
+
+
+def note_icon(icons, archived=False, pinned=False, checklist=False, media=None):
     if checklist:
         return icons["checklist"]
+    icon = media_icon(icons, media)
+    if icon:
+        return icon
     if archived:
         return icons["archive"]
     if pinned:
@@ -50,10 +71,10 @@ def note_result_action(plugin, note_id, edit_mode=False):
     return plugin.open_note, [note_id]
 
 
-def note_result_icon(icons, archived=False, pinned=False, checklist=False, edit_mode=False):
+def note_result_icon(icons, archived=False, pinned=False, checklist=False, edit_mode=False, media=None):
     if edit_mode and not pinned and not checklist:
         return icons["edit_note"]
-    return note_icon(icons, archived, pinned, checklist)
+    return note_icon(icons, archived, pinned, checklist, media)
 
 
 def note_result_subtitle(subtitle, labels=None, edit_mode=False):
@@ -64,18 +85,19 @@ def note_result_subtitle(subtitle, labels=None, edit_mode=False):
 
 
 def add_empty_notes_result(plugin, icons, archived=False, search_text=""):
+    icon = icons.get("warning", icons["archive"] if archived else icons["list"])
     if str(search_text or "").strip():
         plugin.add_item(
             title="No archived notes found" if archived else "No notes found",
             subtitle=f"No matches for: {search_text}",
-            icon=icons["archive"] if archived else icons["list"],
+            icon=icon,
         )
         return
 
     plugin.add_item(
         title="No archived notes found" if archived else "No notes found",
         subtitle="Archived notes will appear here" if archived else "Create your first note!",
-        icon=icons["archive"] if archived else icons["list"],
+        icon=icon,
     )
 
 
@@ -87,12 +109,13 @@ def render_cached_notes(plugin, icons, notes, archived=False, search_text="", ed
     for note in notes:
         pinned = bool(note.get("pinned"))
         is_checklist = note.get("type") == "LIST"
+        media = note.get("media") if isinstance(note.get("media"), dict) else {}
         labels = note.get("labels", []) if isinstance(note.get("labels"), list) else []
         method, parameters = note_result_action(plugin, note.get("id", ""), edit_mode)
         plugin.add_item(
             title=note.get("title", ""),
             subtitle=note_result_subtitle(note.get("subtitle", ""), labels, edit_mode),
-            icon=note_result_icon(icons, archived, pinned, is_checklist, edit_mode),
+            icon=note_result_icon(icons, archived, pinned, is_checklist, edit_mode, media),
             method=method,
             parameters=parameters,
             context={
@@ -103,6 +126,7 @@ def render_cached_notes(plugin, icons, notes, archived=False, search_text="", ed
                 "checklist": is_checklist,
                 "edit_mode": bool(edit_mode),
                 "links": note.get("links", []) if isinstance(note.get("links"), list) else [],
+                "media": media,
             },
         )
 
@@ -118,11 +142,16 @@ def render_live_notes(plugin, icons, notes, archived=False, search_text="", labe
         links = extract_links(f"{note.title}\n{note.text}")
         pinned = bool(note.pinned)
         is_checklist = str(getattr(getattr(note, "type", ""), "value", getattr(note, "type", ""))) == "LIST"
+        media = {
+            "image": len(getattr(note, "images", []) or []),
+            "audio": len(getattr(note, "audio", []) or []),
+            "drawing": len(getattr(note, "drawings", []) or []),
+        }
         method, parameters = note_result_action(plugin, note.id, edit_mode)
         plugin.add_item(
             title=title,
             subtitle=note_result_subtitle(subtitle, labels, edit_mode),
-            icon=note_result_icon(icons, archived, pinned, is_checklist, edit_mode),
+            icon=note_result_icon(icons, archived, pinned, is_checklist, edit_mode, media),
             method=method,
             parameters=parameters,
             context={
@@ -133,5 +162,6 @@ def render_live_notes(plugin, icons, notes, archived=False, search_text="", labe
                 "checklist": is_checklist,
                 "edit_mode": bool(edit_mode),
                 "links": links,
+                "media": media,
             },
         )

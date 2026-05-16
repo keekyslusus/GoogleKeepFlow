@@ -12,11 +12,14 @@ from googlekeepflow.worker_external_edit import (
     code_fingerprint_changed,
     file_launch_url,
     file_signature,
+    has_due_pending_edit,
     mark_remote_conflict,
     note_is_deleted_or_trashed,
     process_active_edits,
     remove_watch_state,
+    seconds_until_next_pending_edit,
     write_watch_state,
+    ExternalEditEventHandler,
 )
 
 
@@ -146,6 +149,43 @@ class ExternalEditWatcherUpdateTests(unittest.TestCase):
             cleanup_active_edit_files(active, keep_files=True)
 
             self.assertTrue(edit_file.exists())
+
+    def test_pending_edit_wait_tracks_debounce_deadline(self):
+        now = time.time()
+        active = {
+            "note": {
+                "pending_signature": ("mtime", 10),
+                "pending_since": now - 0.5,
+            }
+        }
+
+        self.assertGreater(seconds_until_next_pending_edit(active, now), 0)
+        self.assertFalse(has_due_pending_edit(active, now))
+        self.assertTrue(has_due_pending_edit(active, now + DEBOUNCE_SECONDS))
+
+    def test_filesystem_event_handler_wakes_for_edit_files_only(self):
+        class Event:
+            is_directory = False
+            dest_path = ""
+
+            def __init__(self, src_path):
+                self.src_path = src_path
+
+        class WakeEvent:
+            def __init__(self):
+                self.called = False
+
+            def set(self):
+                self.called = True
+
+        wake_event = WakeEvent()
+        handler = ExternalEditEventHandler(wake_event)
+
+        handler.on_any_event(Event(str(Path("editing") / "external_edit_watch.lock")))
+        self.assertFalse(wake_event.called)
+
+        handler.on_any_event(Event(str(Path("editing") / "note.txt")))
+        self.assertTrue(wake_event.called)
 
 
 if __name__ == "__main__":

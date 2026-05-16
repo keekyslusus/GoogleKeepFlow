@@ -38,12 +38,14 @@ if __name__ == "__main__" and get_request_method() in LIGHTWEIGHT_METHODS:
 from flox import Flox
 import googlekeepflow.keep_actions as keep_actions
 import googlekeepflow.keep_listing as keep_listing
+from googlekeepflow.keep_clipboard import has_clipboard_image, has_pending_clipboard_image, load_pending_clipboard_image, save_clipboard_preview
 from googlekeepflow.keep_auth_service import get_auth, secure_settings_dir
 from googlekeepflow.keep_commands import handle_query
 from googlekeepflow.keep_notes import create_keep_client, sync_keep_client
 from googlekeepflow.keep_results import add_empty_notes_result, add_to_keep_subtitle, note_icon, note_preview_and_labels, render_cached_notes, render_live_notes
 from googlekeepflow.keep_setup_launcher import start_setup_helper
 from googlekeepflow.keep_urls import open_note_url
+from googlekeepflow.keep_values import parse_bool
 
 
 KEEP_SYNC_TTL_SECONDS = 15
@@ -74,6 +76,9 @@ class GoogleKeepPlugin(Flox):
             "add_note": "icons/add_note.png",
             "archive": "icons/archive.png",
             "checklist": "icons/checklist.png",
+            "contain_audio": "icons/contain_audio.png",
+            "contain_drawing": "icons/contain_drawing.png",
+            "contain_image": "icons/contain_image.png",
             "default": "keep.png",
             "edit_note": "icons/edit_note.png",
             "list": "icons/list.png",
@@ -84,6 +89,8 @@ class GoogleKeepPlugin(Flox):
             "setup": "icons/setup.png",
             "trash": "icons/trash.png",
             "unpin": "icons/unpin.png",
+            "clipboard" : "icons/clipboard.png",
+            "warning" : "icons/warn.png",
         }
 
     def get_auth(self):
@@ -171,6 +178,43 @@ class GoogleKeepPlugin(Flox):
     def add_note(self, text, pinned=False, archived=False, list_note=False, reminder_at_iso=""):
         return keep_actions.add_note(self, plugindir, text, pinned, archived, list_note, reminder_at_iso)
 
+    def has_clipboard_image(self):
+        return has_clipboard_image()
+
+    def clipboard_image_icon(self):
+        try:
+            return save_clipboard_preview(self.secure_settings_dir())
+        except Exception as exc:
+            self.logger.debug("Failed to create clipboard image preview: %s: %s", type(exc).__name__, exc)
+            return self.icons["clipboard"]
+
+    def pending_clipboard_image_icon(self):
+        try:
+            payload = load_pending_clipboard_image(self.secure_settings_dir())
+            return str(payload.get("preview_icon", "") or "") or self.icons["clipboard"]
+        except Exception as exc:
+            self.logger.debug("Failed to read pending clipboard image preview: %s: %s", type(exc).__name__, exc)
+            return self.icons["clipboard"]
+
+    def has_pending_clipboard_image(self):
+        try:
+            return has_pending_clipboard_image(self.secure_settings_dir())
+        except Exception as exc:
+            self.logger.debug("Failed to read pending clipboard image: %s: %s", type(exc).__name__, exc)
+            return False
+
+    def add_clipboard_image(self):
+        return keep_actions.add_clipboard_image(self, plugindir)
+
+    def send_clipboard_image_now(self):
+        return keep_actions.send_clipboard_image_now(self, plugindir)
+
+    def begin_clipboard_image_note(self):
+        return keep_actions.begin_clipboard_image_note(self, plugindir)
+
+    def add_pending_image_note(self, text=""):
+        return keep_actions.add_pending_image_note(self, plugindir, text)
+
     def open_note(self, note_id):
         self.logger.info(f"Opening note: {note_id}")
         open_note_url(note_id)
@@ -190,7 +234,7 @@ class GoogleKeepPlugin(Flox):
 
     def open_webview_setup(self, email=''):
         try:
-            debug_webview = keep_actions.parse_bool(self.settings.get("debug_webview", False))
+            debug_webview = parse_bool(self.settings.get("debug_webview", False))
             start_setup_helper(plugindir, email, self.secure_settings_dir(), self.logger, debug_webview=debug_webview)
             return "Opening GoogleKeepFlow setup..."
         except Exception as e:

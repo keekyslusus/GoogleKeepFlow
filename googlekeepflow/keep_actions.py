@@ -1,16 +1,19 @@
 from googlekeepflow.keep_worker_launcher import (
     start_archive_worker,
     start_external_edit_worker,
+    start_image_worker,
     start_note_worker,
     start_pin_worker,
     start_trash_worker,
 )
-
-
-def parse_bool(value):
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in ("1", "true", "yes", "on")
+from googlekeepflow.keep_clipboard import (
+    IMAGE_MARKER,
+    clear_pending_clipboard_image,
+    load_pending_clipboard_image,
+    read_clipboard_png,
+    save_pending_clipboard_image,
+)
+from googlekeepflow.keep_values import parse_bool
 
 
 def reset_launcher_query(plugin):
@@ -68,6 +71,94 @@ def add_note(plugin, plugin_dir, text, pinned=False, archived=False, list_note=F
         "sync worker",
         start,
         "Note queued for Google Keep sync...",
+    )
+
+
+def add_clipboard_image(plugin, plugin_dir):
+    return add_pending_image_note(plugin, plugin_dir, "")
+
+
+def send_clipboard_image_now(plugin, plugin_dir):
+    plugin.logger.info("Sending clipboard image note...")
+    email, master_token = plugin.get_auth()
+    if not email or not master_token:
+        return "GoogleKeepFlow setup required"
+
+    try:
+        image_payload = read_clipboard_png()
+    except Exception as exc:
+        plugin.logger.error("Failed to read clipboard image: %s: %s", type(exc).__name__, exc)
+        return f"Failed: {str(exc)}"
+
+    show_notifications = parse_bool(plugin.settings.get('show_notifications', True))
+    try:
+        start_image_worker(
+            plugin_dir,
+            email,
+            image_payload,
+            "",
+            show_notifications,
+            plugin.logger,
+            plugin.secure_settings_dir(),
+        )
+        reset_launcher_query(plugin)
+        return "Image queued for Google Keep sync..."
+    except Exception as exc:
+        plugin.logger.error("Failed to start image sync worker: %s: %s", type(exc).__name__, exc)
+        return f"Failed: {str(exc)}"
+
+
+def begin_clipboard_image_note(plugin, plugin_dir):
+    plugin.logger.info("Preparing clipboard image note...")
+    email, master_token = plugin.get_auth()
+    if not email or not master_token:
+        return "GoogleKeepFlow setup required"
+
+    try:
+        image_payload = read_clipboard_png()
+    except Exception as exc:
+        plugin.logger.error("Failed to read clipboard image: %s: %s", type(exc).__name__, exc)
+        return f"Failed: {str(exc)}"
+
+    try:
+        image_payload["preview_icon"] = getattr(plugin, "clipboard_image_icon", lambda: "")() or ""
+        save_pending_clipboard_image(plugin.secure_settings_dir(), image_payload)
+        change_query = getattr(plugin, "change_query", None)
+        if callable(change_query):
+            change_query(f"{plugin.current_keyword()} {IMAGE_MARKER} ", True)
+        return "Clipboard image attached. Type note text..."
+    except Exception as exc:
+        plugin.logger.error("Failed to prepare clipboard image note: %s: %s", type(exc).__name__, exc)
+        return f"Failed: {str(exc)}"
+
+
+def add_pending_image_note(plugin, plugin_dir, text):
+    plugin.logger.info("Adding pending clipboard image note...")
+    try:
+        image_payload = load_pending_clipboard_image(plugin.secure_settings_dir())
+    except Exception as exc:
+        plugin.logger.error("Failed to load pending clipboard image: %s: %s", type(exc).__name__, exc)
+        return f"Failed: {str(exc)}"
+    if not image_payload:
+        return "No pending clipboard image"
+
+    def start(email, master_token, show_notifications, settings_dir):
+        start_image_worker(
+            plugin_dir,
+            email,
+            image_payload,
+            text,
+            show_notifications,
+            plugin.logger,
+            settings_dir,
+        )
+        clear_pending_clipboard_image(settings_dir)
+
+    return start_authenticated_worker_action(
+        plugin,
+        "image sync worker",
+        start,
+        "Image queued for Google Keep sync...",
     )
 
 

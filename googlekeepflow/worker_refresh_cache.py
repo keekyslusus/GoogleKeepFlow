@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import logging
 from logging.handlers import RotatingFileHandler
 import os

@@ -1,10 +1,10 @@
-#!/usr/bin/env python
 import json
 import hashlib
 import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +28,16 @@ from googlekeepflow.worker_common import (
     show_notification,
 )
 
+try:
+    from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
+
+    WATCHDOG_AVAILABLE = True
+except ImportError:
+    FileSystemEventHandler = object
+    Observer = None
+    WATCHDOG_AVAILABLE = False
+
 
 EDIT_DIR_NAME = "editing"
 JOB_DIR_NAME = "jobs"
@@ -35,6 +45,7 @@ JOB_PATTERN = "external_edit_*.bin"
 WATCH_LOCK_NAME = "external_edit_watch.lock"
 WATCH_STATE_NAME = "external_edit_watch.state.json"
 UPDATE_CHECK_SECONDS = 5
+WATCHDOG_FALLBACK_SCAN_SECONDS = 30
 LOCK_STALE_SECONDS = 8 * 60 * 60
 IDLE_EXIT_SECONDS = 2 * 60 * 60
 DEBOUNCE_SECONDS = 1.5
@@ -455,6 +466,88 @@ def process_active_edits(settings_dir, active):
             active.pop(note_key, None)
 
 
+class ExternalEditEventHandler(FileSystemEventHandler):
+    def __init__(self, wake_event):
+        self.wake_event = wake_event
+
+    def on_any_event(self, event):
+        if getattr(event, "is_directory", False):
+            return
+
+        for raw_path in (getattr(event, "src_path", ""), getattr(event, "dest_path", "")):
+            if not raw_path:
+                continue
+            name = Path(raw_path).name
+            if name in (WATCH_LOCK_NAME, WATCH_STATE_NAME):
+                continue
+            self.wake_event.set()
+            return
+
+
+def start_filesystem_watcher(edit_dir, logger):
+    if not WATCHDOG_AVAILABLE:
+        logger.warning("watchdog not installed, external edit watcher using polling")
+        return None, None
+
+    wake_event = threading.Event()
+    observer = Observer()
+    try:
+        observer.schedule(ExternalEditEventHandler(wake_event), str(edit_dir), recursive=True)
+        observer.start()
+        logger.info("External edit filesystem watcher started")
+        return observer, wake_event
+    except Exception as exc:
+        logger.warning("Failed to start watchdog observer, using polling: %s: %s", type(exc).__name__, exc)
+        try:
+            observer.stop()
+        except Exception:
+            pass
+        return None, None
+
+
+def stop_filesystem_watcher(observer, logger):
+    if observer is None:
+        return
+    observer.stop()
+    observer.join(timeout=5)
+    logger.info("External edit filesystem watcher stopped")
+
+
+def seconds_until_next_pending_edit(active, now):
+    waits = []
+    for state in active.values():
+        pending_since = state.get("pending_since")
+        if state.get("pending_signature") is not None and pending_since is not None:
+            waits.append(max(0, pending_since + DEBOUNCE_SECONDS - now))
+    return min(waits) if waits else None
+
+
+def has_due_pending_edit(active, now):
+    pending_wait = seconds_until_next_pending_edit(active, now)
+    return pending_wait is not None and pending_wait <= 0
+
+
+def wait_for_external_edit_work(wake_event, active, last_update_check, last_activity, last_fallback_scan):
+    if wake_event is None:
+        time.sleep(POLL_SECONDS)
+        return last_fallback_scan
+
+    now = time.time()
+    wait_times = [
+        max(0, UPDATE_CHECK_SECONDS - (now - last_update_check)),
+        max(0, WATCHDOG_FALLBACK_SCAN_SECONDS - (now - last_fallback_scan)),
+    ]
+    pending_wait = seconds_until_next_pending_edit(active, now)
+    if pending_wait is not None:
+        wait_times.append(pending_wait)
+    if not active:
+        wait_times.append(max(0, IDLE_EXIT_SECONDS - (now - last_activity)))
+
+    wake_event.clear()
+    wake_event.wait(min(wait_times))
+    return last_fallback_scan
+
+
 def main():
     if len(sys.argv) != 2:
         logger.error("Invalid arguments count: %s", len(sys.argv))
@@ -476,11 +569,15 @@ def main():
     last_update_check = 0
     update_exit = False
     start_fingerprint = code_fingerprint()
+    observer, wake_event = start_filesystem_watcher(edit_dir, logger)
+    last_fallback_scan = 0
     write_watch_state(edit_dir, start_fingerprint)
     logger.info("External edit watcher started")
     try:
         while True:
             now = time.time()
+            force_scan = wake_event is None or now - last_fallback_scan >= WATCHDOG_FALLBACK_SCAN_SECONDS
+            pending_due = has_due_pending_edit(active, now)
             if now - last_update_check >= UPDATE_CHECK_SECONDS:
                 last_update_check = now
                 if code_fingerprint_changed(start_fingerprint):
@@ -495,17 +592,19 @@ def main():
                     return
 
             opened_jobs = 0
-            for job_path, job in iter_jobs(job_dir):
-                try:
-                    open_edit_job(settings_dir, edit_dir, active, job)
-                    delete_job_file(job_path)
-                    opened_jobs += 1
-                except Exception as exc:
-                    logger.error("Failed to open external edit: %s: %s", type(exc).__name__, exc)
-                    show_job_notification(job, "External edit failed", short_error(exc))
-                    delete_job_file(job_path)
+            if force_scan or pending_due or wake_event.is_set():
+                last_fallback_scan = now
+                for job_path, job in iter_jobs(job_dir):
+                    try:
+                        open_edit_job(settings_dir, edit_dir, active, job)
+                        delete_job_file(job_path)
+                        opened_jobs += 1
+                    except Exception as exc:
+                        logger.error("Failed to open external edit: %s: %s", type(exc).__name__, exc)
+                        show_job_notification(job, "External edit failed", short_error(exc))
+                        delete_job_file(job_path)
 
-            process_active_edits(settings_dir, active)
+                process_active_edits(settings_dir, active)
 
             if opened_jobs or active:
                 last_activity = time.time()
@@ -513,8 +612,15 @@ def main():
                 logger.info("External edit watcher idle timeout")
                 return
 
-            time.sleep(POLL_SECONDS)
+            last_fallback_scan = wait_for_external_edit_work(
+                wake_event,
+                active,
+                last_update_check,
+                last_activity,
+                last_fallback_scan,
+            )
     finally:
+        stop_filesystem_watcher(observer, logger)
         remove_watch_state(edit_dir)
         if update_exit:
             logger.info("External edit watcher left active edit files in place after update")

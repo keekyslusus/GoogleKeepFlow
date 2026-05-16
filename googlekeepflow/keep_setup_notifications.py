@@ -67,6 +67,17 @@ def is_webview2_runtime_error(error):
     return any(marker in text for marker in markers)
 
 
+def is_pythonnet_runtime_error(error):
+    text = f"{type(error).__name__}: {error}".lower()
+    markers = (
+        "python.runtime.dll",
+        "python.runtime.loader.initialize",
+        "failed to resolve python.runtime",
+        "pythonnet",
+    )
+    return any(marker in text for marker in markers)
+
+
 def show_webview2_missing_notice(plugin_dir, logger=None):
     message = (
         "Edge WebView2 Runtime is not installed.\n\n"
@@ -82,4 +93,15 @@ def show_webview2_missing_notice(plugin_dir, logger=None):
         logger=logger,
     ):
         show_message("GoogleKeepFlow Setup", message, is_error=True)
+
+
+def show_manual_install_notice(log_file):
+    show_message(
+        "GoogleKeepFlow Setup",
+        "Failed to start the setup window.\n\n"
+        "This may happen if the plugin folder was copied into Flow Launcher plugins manually.\n"
+        "Install GoogleKeepFlow through Flow Launcher Plugin Store or Install from local path, then run keep setup again.\n\n"
+        f"Details saved to:\n{log_file}",
+        is_error=True,
+    )
 

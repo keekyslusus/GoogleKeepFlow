@@ -2,14 +2,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from googlekeepflow.keep_values import parse_bool
+
 
 SW_SHOWNORMAL = 1
-
-
-def parse_bool(value):
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 def start_setup_helper(plugin_dir, email="", settings_dir=None, logger=None, debug_webview=False):
