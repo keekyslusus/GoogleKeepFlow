@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 
 URL_RE = re.compile(r"(?i)\b((?:https?://|www\.)[^\s<>'\"`]+)")
-TRAILING_PUNCTUATION = ".,;:!?)\]}\"'"
+TRAILING_PUNCTUATION = ".,;:!?)]}\"'"
 
 
 def extract_links(text, limit=20):
