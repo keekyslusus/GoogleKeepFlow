@@ -93,7 +93,7 @@
 - Supports absolute times like `today 09:00`, `tomorrow 9am`, and `01.05.2026 21:00`
 
 
-### Adaptive context menu
+### Context menu
 <img src=".github/context_menu.png" width="550">
 
 - Open Google Keep, reminders, archive, or trash from the launcher result
@@ -115,3 +115,9 @@
 ## Installation
 
 type `pm install GoogleKeepFlow` in Flow Launcher
+
+
+## Check out my other plugins
+
+- [SteamFlow](https://github.com/keekyslusus/SteamFlow)
+- [GrepFlow](https://github.com/keekyslusus/GrepFlow)
