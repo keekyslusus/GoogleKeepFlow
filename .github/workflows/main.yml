@@ -1,12 +1,8 @@
 name: 'build & release plugin'
 
+# Releases are published only by hand: Actions -> build & release plugin -> Run workflow (branch: main).
 on:
   workflow_dispatch:
-
-  push:
-    branches: [ main, master ]
-    paths-ignore:
-      - '.github/workflows/*'
 
 jobs:
   build:
@@ -19,6 +15,13 @@ jobs:
       python_ver: 3.11
 
     steps:
+    - name: Release only from main
+      if: github.ref != 'refs/heads/main'
+      run: |
+        echo "::error::Releases are built from main only, this run used '${{ github.ref_name }}'."
+        exit 1
+      shell: bash
+
     - uses: actions/checkout@v3
 
     - name: Set up Python ${{ env.python_ver }}
@@ -32,6 +35,17 @@ jobs:
       with:
         path: 'plugin.json'
         prop_path: 'Version'
+
+    - name: Refuse to overwrite an existing release
+      run: |
+        tag="v${{ steps.version.outputs.prop }}"
+        if gh release view "$tag" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+          echo "::error::Release $tag already exists. Bump Version in plugin.json before releasing."
+          exit 1
+        fi
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Install dependencies into lib folder
       run: |
