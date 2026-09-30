@@ -2,9 +2,8 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-import gkeepapi
-
 from googlekeepflow.keep_cache import save_cache
+from googlekeepflow.keep_http import new_keep_client
 from googlekeepflow.worker_auth import load_worker_auth
 
 
@@ -17,20 +16,35 @@ except ImportError:
     NOTIFICATIONS_ENABLED = False
 
 
+SORT_STEP = 1048576
+
+
+_LOG_HANDLERS = {}
+
+
+def worker_log_handler(plugin_dir):
+    # One handler per log file per process, so loggers of imported workers share rollover.
+    log_path = str(Path(plugin_dir) / "log_worker.log")
+    handler = _LOG_HANDLERS.get(log_path)
+    if handler is None:
+        handler = RotatingFileHandler(
+            log_path,
+            maxBytes=1 * 1024 * 1024,
+            backupCount=1,
+            encoding="utf-8",
+        )
+        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+        _LOG_HANDLERS[log_path] = handler
+    return handler
+
+
 def setup_worker_logger(name, plugin_dir):
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
     if logger.handlers:
         return logger
 
-    log_handler = RotatingFileHandler(
-        Path(plugin_dir) / "log_worker.log",
-        maxBytes=1 * 1024 * 1024,
-        backupCount=1,
-        encoding="utf-8",
-    )
-    log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-    logger.addHandler(log_handler)
+    logger.addHandler(worker_log_handler(plugin_dir))
     if not NOTIFICATIONS_ENABLED:
         logger.warning("winotify not installed, notifications disabled")
     return logger
@@ -63,6 +77,23 @@ def note_preview(note):
     return preview[:80] + ("..." if len(preview) > 80 else "")
 
 
+def next_top_sort_value(keep, logger=None):
+    # gkeepapi gives new notes a random sort value; Keep orders unpinned notes by it, highest first.
+    sorts = []
+    for note in keep.all():
+        try:
+            if getattr(note, "trashed", False) or getattr(note, "archived", False) or getattr(note, "pinned", False):
+                continue
+            sorts.append(int(note.sort))
+        except (TypeError, ValueError, AttributeError) as exc:
+            if logger:
+                logger.debug("Failed to read note sort value: %s: %s", type(exc).__name__, exc)
+
+    if not sorts:
+        return SORT_STEP
+    return max(sorts) + SORT_STEP
+
+
 def find_note(keep, note_id):
     for note in keep.all():
         if str(getattr(note, "id", "")) == str(note_id):
@@ -70,9 +101,9 @@ def find_note(keep, note_id):
     return None
 
 
-def load_keep(settings_dir, requested_email):
+def load_keep(settings_dir, requested_email, on_response=None):
     email, master_token = load_worker_auth(settings_dir, requested_email)
-    keep = gkeepapi.Keep()
+    keep = new_keep_client(on_response)
     keep.authenticate(email, master_token, sync=True)
     return email, keep
 

@@ -6,6 +6,8 @@ ARCHIVE_COMMANDS = ("archive",)
 PIN_COMMANDS = ("pin", "pinned")
 TODO_COMMANDS = ("todo", "checklist")
 REMINDER_COMMANDS = ("remind", "reminder")
+LINK_COMMANDS = ("link",)
+LINKS_COMMANDS = ("links", "linked")
 
 
 def setup_email_from_query(query_text, default_email=""):

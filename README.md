@@ -25,8 +25,10 @@
 `keep pin`
 `keep add`
 `keep list`
+`keep link`
 `keep edit`
 `keep todo`
+`keep links`
 `keep setup`
 `keep archive`
 `keep reminder`
@@ -61,6 +63,17 @@
 
 - `keep edit [search]` to search notes and open the selected note in your text editor
 - Save the `.txt` file to sync changes back to Google Keep
+
+
+### Synced files
+
+- Copy a `.txt` or `.md` file in Explorer (Ctrl+C), then use `keep link` to sync it with a new or existing note
+- You can also paste the file path: `keep link "C:\Users\pooky\note.md"`
+- Two-way sync: saving the file updates the note, and edits made in Google Keep are written back to the file
+- Renaming or moving the file on the same drive keeps the sync; if it is deleted, syncing pauses until it is back
+- If both sides change, syncing pauses and `keep links` lets you choose which version to keep; the other one is backed up
+- `keep links` shows synced files and their status; use the context menu to stop syncing
+- Syncing starts with the first `keep` query; enable **Start file sync with Windows** in plugin settings to sync right after sign-in
 
 
 ### Archive

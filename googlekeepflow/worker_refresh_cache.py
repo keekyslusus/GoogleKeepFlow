@@ -14,6 +14,7 @@ if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
 
 from googlekeepflow.keep_cache import save_cache
+from googlekeepflow.keep_http import api_usage, enable_api_usage_log
 from googlekeepflow.keep_notes import create_keep_client, sync_keep_client
 from googlekeepflow.worker_auth import load_worker_auth
 
@@ -70,9 +71,12 @@ def main():
     requested_email = sys.argv[1]
     settings_dir = Path(sys.argv[2])
     settings_dir.mkdir(parents=True, exist_ok=True)
+    enable_api_usage_log(settings_dir, "keep_list_refresh")
+    api_usage.add("runs")
 
     lock = FileLock(settings_dir / "cache_notes.lock")
     if not lock.acquire():
+        api_usage.add("skipped_busy")
         logger.info("Cache refresh already running")
         return
 

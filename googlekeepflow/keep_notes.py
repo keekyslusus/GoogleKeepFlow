@@ -1,13 +1,12 @@
-import gkeepapi
-
 from googlekeepflow.keep_cache import media_counts_for_note, note_display_text, note_sort_key
+from googlekeepflow.keep_http import new_keep_client
 from googlekeepflow.keep_labels import label_names_for_note, matches_terms
 
 
 def create_keep_client(email, master_token, logger=None):
     if logger:
         logger.info("Authenticating Google Keep client...")
-    keep = gkeepapi.Keep()
+    keep = new_keep_client()
     keep.authenticate(email, master_token, sync=False)
     return keep
 

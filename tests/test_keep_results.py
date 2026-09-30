@@ -8,6 +8,7 @@ class FakePlugin:
         self.items = []
         self.open_note = object()
         self.edit_note_external = object()
+        self.link_file = object()
 
     def add_item(self, **kwargs):
         self.items.append(kwargs)
@@ -105,6 +106,45 @@ class KeepResultsTests(unittest.TestCase):
         render_cached_notes(plugin, icons, notes, edit_mode=True)
 
         self.assertEqual(plugin.items[0]["icon"], "pin.png")
+
+    def test_link_mode_keeps_note_icons_and_skips_checklists(self):
+        plugin = FakePlugin()
+        icons = {
+            "archive": "archive.png",
+            "checklist": "checklist.png",
+            "contain_image": "contain_image.png",
+            "edit_note": "edit_note.png",
+            "list": "list.png",
+            "pin": "pin.png",
+        }
+        notes = [
+            {"id": "plain", "title": "Plain", "pinned": False, "type": "NOTE"},
+            {"id": "pinned", "title": "Pinned", "pinned": True, "type": "NOTE"},
+            {"id": "image", "title": "Photo", "pinned": False, "type": "NOTE", "media": {"image": 1}},
+            {"id": "todo", "title": "Todo", "pinned": False, "type": "LIST"},
+        ]
+
+        render_cached_notes(plugin, icons, notes, link_path="C:/work/roadmap.md", linked_files={"pinned": "C:/work/other.md"})
+
+        self.assertEqual([item["icon"] for item in plugin.items], ["list.png", "contain_image.png"])
+        self.assertEqual(plugin.items[0]["method"], plugin.link_file)
+        self.assertEqual(plugin.items[0]["parameters"], ["C:/work/roadmap.md", "plain"])
+        self.assertEqual(plugin.items[0]["subtitle"], "Sync with roadmap.md: file text replaces this note")
+
+
+    def test_edit_mode_labels_synced_notes_with_their_file(self):
+        plugin = FakePlugin()
+        icons = {"archive": "archive.png", "checklist": "checklist.png", "edit_note": "edit_note.png", "list": "list.png", "pin": "pin.png"}
+        notes = [
+            {"id": "synced", "title": "Roadmap", "subtitle": "Open in Google Keep", "pinned": False, "type": "NOTE"},
+            {"id": "plain", "title": "Plain", "subtitle": "Open in Google Keep", "pinned": False, "type": "NOTE"},
+        ]
+
+        render_cached_notes(plugin, icons, notes, edit_mode=True, linked_files={"synced": "C:/work/release_roadmap.md"})
+
+        self.assertEqual(plugin.items[0]["subtitle"], "Open synced file release_roadmap.md")
+        self.assertEqual(plugin.items[1]["subtitle"], "Edit in text editor")
+        self.assertEqual(plugin.items[0]["method"], plugin.edit_note_external)
 
 
 if __name__ == "__main__":

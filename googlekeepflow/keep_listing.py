@@ -4,8 +4,12 @@ from googlekeepflow.keep_query import parse_max_notes
 from googlekeepflow.keep_worker_launcher import start_cache_refresh_worker
 
 
-def list_notes(plugin, plugin_dir, email, master_token, archived=False, search_text="", edit_mode=False):
+def list_notes(plugin, plugin_dir, email, master_token, archived=False, search_text="", edit_mode=False, link_path="", linked_files=None):
+    linked_files = linked_files or {}
     max_notes = parse_max_notes(plugin.settings.get('max_notes_to_show', '20'))
+    if link_path:
+        # Linked notes are hidden in link mode; fetch extra so the visible list keeps its size.
+        max_notes += len(linked_files)
     settings_dir = plugin.secure_settings_dir()
 
     try:
@@ -14,7 +18,7 @@ def list_notes(plugin, plugin_dir, email, master_token, archived=False, search_t
         if cached is not None:
             age_seconds = cache_data_age_seconds(cache_data, plugin.logger)
             plugin.logger.info("Using notes cache: age_seconds=%s", age_seconds)
-            plugin.render_cached_notes(cached, archived, search_text=search_text, edit_mode=edit_mode)
+            plugin.render_cached_notes(cached, archived, search_text=search_text, edit_mode=edit_mode, link_path=link_path, linked_files=linked_files)
             start_cache_refresh_worker(plugin_dir, email, settings_dir, plugin.logger)
             return
 
@@ -23,7 +27,7 @@ def list_notes(plugin, plugin_dir, email, master_token, archived=False, search_t
         labels_by_id = {label.id: label.name for label in labels}
         save_cache(settings_dir, email, keep.all(), plugin.logger, labels=labels)
         notes = recent_notes_from_keep(keep, max_notes=max_notes, archived=archived, search_text=search_text, labels_by_id=labels_by_id)
-        plugin.render_live_notes(notes, archived, search_text=search_text, labels_by_id=labels_by_id, edit_mode=edit_mode)
+        plugin.render_live_notes(notes, archived, search_text=search_text, labels_by_id=labels_by_id, edit_mode=edit_mode, link_path=link_path, linked_files=linked_files)
 
     except Exception as e:
         plugin.logger.error(f"Failed to list notes: {type(e).__name__}: {e}")

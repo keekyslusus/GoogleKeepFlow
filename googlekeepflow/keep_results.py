@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from googlekeepflow.keep_labels import append_label_suffix, label_names_for_note, label_suffix, parse_note_labels
 from googlekeepflow.keep_links import extract_links
 from googlekeepflow.keep_notes import note_result_text
@@ -65,7 +67,13 @@ def note_icon(icons, archived=False, pinned=False, checklist=False, media=None):
     return icons["list"]
 
 
-def note_result_action(plugin, note_id, edit_mode=False):
+def link_file_subtitle(link_path):
+    return f"Sync with {Path(link_path).name}: file text replaces this note"
+
+
+def note_result_action(plugin, note_id, edit_mode=False, link_path=""):
+    if link_path:
+        return plugin.link_file, [link_path, note_id]
     if edit_mode:
         return plugin.edit_note_external, [note_id]
     return plugin.open_note, [note_id]
@@ -77,7 +85,11 @@ def note_result_icon(icons, archived=False, pinned=False, checklist=False, edit_
     return note_icon(icons, archived, pinned, checklist, media)
 
 
-def note_result_subtitle(subtitle, labels=None, edit_mode=False):
+def note_result_subtitle(subtitle, labels=None, edit_mode=False, link_path="", linked_file=""):
+    if edit_mode and linked_file:
+        return append_label_suffix(f"Open synced file {Path(linked_file).name}", labels or [])
+    if link_path:
+        return append_label_suffix(link_file_subtitle(link_path), labels or [])
     subtitle = str(subtitle or "")
     if edit_mode and subtitle == "Open in Google Keep":
         subtitle = EDIT_IN_TEXT_EDITOR_TEXT
@@ -101,20 +113,23 @@ def add_empty_notes_result(plugin, icons, archived=False, search_text=""):
     )
 
 
-def render_cached_notes(plugin, icons, notes, archived=False, search_text="", edit_mode=False):
+def render_cached_notes(plugin, icons, notes, archived=False, search_text="", edit_mode=False, link_path="", linked_files=None):
     if not notes:
         add_empty_notes_result(plugin, icons, archived, search_text)
         return
 
+    linked_files = linked_files or {}
     for note in notes:
         pinned = bool(note.get("pinned"))
         is_checklist = note.get("type") == "LIST"
+        if link_path and (is_checklist or note.get("id", "") in linked_files):
+            continue
         media = note.get("media") if isinstance(note.get("media"), dict) else {}
         labels = note.get("labels", []) if isinstance(note.get("labels"), list) else []
-        method, parameters = note_result_action(plugin, note.get("id", ""), edit_mode)
+        method, parameters = note_result_action(plugin, note.get("id", ""), edit_mode, link_path)
         plugin.add_item(
             title=note.get("title", ""),
-            subtitle=note_result_subtitle(note.get("subtitle", ""), labels, edit_mode),
+            subtitle=note_result_subtitle(note.get("subtitle", ""), labels, edit_mode, link_path, linked_files.get(note.get("id", ""), "")),
             icon=note_result_icon(icons, archived, pinned, is_checklist, edit_mode, media),
             method=method,
             parameters=parameters,
@@ -125,32 +140,36 @@ def render_cached_notes(plugin, icons, notes, archived=False, search_text="", ed
                 "pinned": pinned,
                 "checklist": is_checklist,
                 "edit_mode": bool(edit_mode),
+                "link_path": link_path,
                 "links": note.get("links", []) if isinstance(note.get("links"), list) else [],
                 "media": media,
             },
         )
 
 
-def render_live_notes(plugin, icons, notes, archived=False, search_text="", labels_by_id=None, edit_mode=False):
+def render_live_notes(plugin, icons, notes, archived=False, search_text="", labels_by_id=None, edit_mode=False, link_path="", linked_files=None):
     if not notes:
         add_empty_notes_result(plugin, icons, archived, search_text)
         return
 
+    linked_files = linked_files or {}
     for note in notes:
         title, subtitle = note_result_text(note)
         labels = label_names_for_note(note, labels_by_id)
         links = extract_links(f"{note.title}\n{note.text}")
         pinned = bool(note.pinned)
         is_checklist = str(getattr(getattr(note, "type", ""), "value", getattr(note, "type", ""))) == "LIST"
+        if link_path and (is_checklist or note.id in linked_files):
+            continue
         media = {
             "image": len(getattr(note, "images", []) or []),
             "audio": len(getattr(note, "audio", []) or []),
             "drawing": len(getattr(note, "drawings", []) or []),
         }
-        method, parameters = note_result_action(plugin, note.id, edit_mode)
+        method, parameters = note_result_action(plugin, note.id, edit_mode, link_path)
         plugin.add_item(
             title=title,
-            subtitle=note_result_subtitle(subtitle, labels, edit_mode),
+            subtitle=note_result_subtitle(subtitle, labels, edit_mode, link_path, linked_files.get(note.id, "")),
             icon=note_result_icon(icons, archived, pinned, is_checklist, edit_mode, media),
             method=method,
             parameters=parameters,
@@ -161,6 +180,7 @@ def render_live_notes(plugin, icons, notes, archived=False, search_text="", labe
                 "pinned": pinned,
                 "checklist": is_checklist,
                 "edit_mode": bool(edit_mode),
+                "link_path": link_path,
                 "links": links,
                 "media": media,
             },

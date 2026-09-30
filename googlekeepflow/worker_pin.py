@@ -9,6 +9,7 @@ lib_path = plugindir / "lib"
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
 
+from googlekeepflow.keep_http import enable_api_usage_log
 from googlekeepflow.worker_common import (
     find_note,
     load_keep,
@@ -32,6 +33,8 @@ def main():
     pinned = str(sys.argv[3]).lower() in ("1", "true", "yes", "on")
     show_notifications = str(sys.argv[4]).lower() in ("1", "true", "yes", "on")
     settings_dir = sys.argv[5]
+    if settings_dir:
+        enable_api_usage_log(settings_dir, "note_action")
 
     logger.info("Pin worker started")
 

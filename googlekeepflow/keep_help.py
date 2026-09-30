@@ -25,6 +25,8 @@ def add_help_results(plugin, keyword, icons):
     list_query = plugin_query(keyword, "list")
     list_search_query = plugin_query(keyword, "list ")
     edit_query = plugin_query(keyword, "edit ")
+    link_query = f"{plugin_query(keyword, 'link')} "
+    links_query = plugin_query(keyword, "links")
     archive_query = plugin_query(keyword, "archive")
     archive_search_query = plugin_query(keyword, "archive ")
     add_query = plugin_query(keyword, "add ")
@@ -71,6 +73,30 @@ def add_help_results(plugin, keyword, icons):
         auto_complete_text=edit_query,
     )
 
+    link_action = change_query_action(plugin, link_query)
+    plugin.add_item(
+        title=f"{plugin_query(keyword, 'link')} [search]",
+        subtitle="Copy a .txt or .md file, then keep it in two-way sync with a note",
+        icon=icons["link"],
+        method=link_action["method"],
+        parameters=link_action["parameters"],
+        dont_hide=link_action["dont_hide"],
+        score=HELP_BASE_SCORE - 3,
+        auto_complete_text=link_query,
+    )
+
+    links_action = change_query_action(plugin, links_query)
+    plugin.add_item(
+        title=links_query,
+        subtitle="Show synced files, resolve conflicts or stop syncing",
+        icon=icons["link"],
+        method=links_action["method"],
+        parameters=links_action["parameters"],
+        dont_hide=links_action["dont_hide"],
+        score=HELP_BASE_SCORE - 4,
+        auto_complete_text=links_query,
+    )
+
     archive_action = change_query_action(plugin, archive_query)
     plugin.add_item(
         title=archive_query,
@@ -79,7 +105,7 @@ def add_help_results(plugin, keyword, icons):
         method=archive_action["method"],
         parameters=archive_action["parameters"],
         dont_hide=archive_action["dont_hide"],
-        score=HELP_BASE_SCORE - 3,
+        score=HELP_BASE_SCORE - 5,
         auto_complete_text=archive_query,
     )
 
@@ -91,7 +117,7 @@ def add_help_results(plugin, keyword, icons):
         method=archive_search_action["method"],
         parameters=archive_search_action["parameters"],
         dont_hide=archive_search_action["dont_hide"],
-        score=HELP_BASE_SCORE - 4,
+        score=HELP_BASE_SCORE - 6,
         auto_complete_text=archive_search_query,
     )
 
@@ -103,7 +129,7 @@ def add_help_results(plugin, keyword, icons):
         method=add_action["method"],
         parameters=add_action["parameters"],
         dont_hide=add_action["dont_hide"],
-        score=HELP_BASE_SCORE - 5,
+        score=HELP_BASE_SCORE - 7,
         auto_complete_text=add_query,
     )
 
@@ -115,7 +141,7 @@ def add_help_results(plugin, keyword, icons):
         method=pin_action["method"],
         parameters=pin_action["parameters"],
         dont_hide=pin_action["dont_hide"],
-        score=HELP_BASE_SCORE - 6,
+        score=HELP_BASE_SCORE - 8,
         auto_complete_text=pin_query,
     )
 
@@ -127,7 +153,7 @@ def add_help_results(plugin, keyword, icons):
         method=todo_action["method"],
         parameters=todo_action["parameters"],
         dont_hide=todo_action["dont_hide"],
-        score=HELP_BASE_SCORE - 7,
+        score=HELP_BASE_SCORE - 9,
         auto_complete_text=todo_query,
     )
 
@@ -139,7 +165,7 @@ def add_help_results(plugin, keyword, icons):
         method=remind_action["method"],
         parameters=remind_action["parameters"],
         dont_hide=remind_action["dont_hide"],
-        score=HELP_BASE_SCORE - 8,
+        score=HELP_BASE_SCORE - 10,
         auto_complete_text=remind_query,
     )
 
@@ -151,7 +177,7 @@ def add_help_results(plugin, keyword, icons):
         method=image_action["method"],
         parameters=image_action["parameters"],
         dont_hide=image_action["dont_hide"],
-        score=HELP_BASE_SCORE - 9,
+        score=HELP_BASE_SCORE - 11,
         auto_complete_text=image_input_query,
     )
 
@@ -163,7 +189,7 @@ def add_help_results(plugin, keyword, icons):
         method=setup_action["method"],
         parameters=setup_action["parameters"],
         dont_hide=setup_action["dont_hide"],
-        score=HELP_BASE_SCORE - 10,
+        score=HELP_BASE_SCORE - 12,
         auto_complete_text=setup_query,
     )
 

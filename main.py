@@ -16,6 +16,7 @@ LIGHTWEIGHT_METHODS = {
     "context_menu",
     "open_link",
     "open_note",
+    "open_path",
 }
 
 
@@ -41,10 +42,13 @@ import googlekeepflow.keep_listing as keep_listing
 from googlekeepflow.keep_clipboard import has_clipboard_image, has_pending_clipboard_image, load_pending_clipboard_image, save_clipboard_preview
 from googlekeepflow.keep_auth_service import get_auth, secure_settings_dir
 from googlekeepflow.keep_commands import handle_query
+from googlekeepflow.keep_http import enable_api_usage_log
+from googlekeepflow.keep_file_links import clipboard_link_file, find_link_by_path, load_registry, resolve_link_source, sorted_links
 from googlekeepflow.keep_notes import create_keep_client, sync_keep_client
 from googlekeepflow.keep_results import add_empty_notes_result, add_to_keep_subtitle, note_icon, note_preview_and_labels, render_cached_notes, render_live_notes
 from googlekeepflow.keep_setup_launcher import start_setup_helper
 from googlekeepflow.keep_urls import open_note_url
+from googlekeepflow.keep_worker_launcher import ensure_linked_files_worker
 from googlekeepflow.keep_values import parse_bool
 
 
@@ -81,6 +85,7 @@ class GoogleKeepPlugin(Flox):
             "contain_image": "icons/contain_image.png",
             "default": "keep.png",
             "edit_note": "icons/edit_note.png",
+            "link": "icons/link.png",
             "list": "icons/list.png",
             "open_website": "icons/open_website.png",
             "pin": "icons/pin.png",
@@ -116,7 +121,15 @@ class GoogleKeepPlugin(Flox):
         return keep
 
     def query(self, query_text):
+        enable_api_usage_log(self.secure_settings_dir(), "plugin_query")
+        self.ensure_linked_files_worker()
         handle_query(self, query_text)
+
+    def ensure_linked_files_worker(self):
+        try:
+            ensure_linked_files_worker(plugindir, self.secure_settings_dir(), self.logger)
+        except Exception as exc:
+            self.logger.warning("Failed to start linked files watcher: %s: %s", type(exc).__name__, exc)
 
     def add_note_result(self, text, pinned=False, archived=False, list_note=False, reminder_at_iso="", reminder_title_due="", reminder_subtitle_due=""):
         action = f"reminder {reminder_title_due}" if reminder_at_iso and reminder_title_due else "reminder" if reminder_at_iso else "checklist" if list_note else "pinned note" if pinned else "archived note" if archived else "note"
@@ -160,20 +173,20 @@ class GoogleKeepPlugin(Flox):
 
         return str(getattr(self, "user_keyword", "") or getattr(self, "action_keyword", "") or "keep").strip()
 
-    def list_notes(self, email, master_token, archived=False, search_text="", edit_mode=False):
-        keep_listing.list_notes(self, plugindir, email, master_token, archived, search_text, edit_mode)
+    def list_notes(self, email, master_token, archived=False, search_text="", edit_mode=False, link_path="", linked_files=None):
+        keep_listing.list_notes(self, plugindir, email, master_token, archived, search_text, edit_mode, link_path, linked_files)
 
     def add_empty_notes_result(self, archived=False, search_text=""):
         add_empty_notes_result(self, self.icons, archived, search_text)
 
-    def render_cached_notes(self, notes, archived=False, search_text="", edit_mode=False):
-        render_cached_notes(self, self.icons, notes, archived, search_text, edit_mode)
+    def render_cached_notes(self, notes, archived=False, search_text="", edit_mode=False, link_path="", linked_files=None):
+        render_cached_notes(self, self.icons, notes, archived, search_text, edit_mode, link_path, linked_files)
 
     def note_icon(self, archived=False, pinned=False, checklist=False):
         return note_icon(self.icons, archived, pinned, checklist)
 
-    def render_live_notes(self, notes, archived=False, search_text="", labels_by_id=None, edit_mode=False):
-        render_live_notes(self, self.icons, notes, archived, search_text, labels_by_id, edit_mode)
+    def render_live_notes(self, notes, archived=False, search_text="", labels_by_id=None, edit_mode=False, link_path="", linked_files=None):
+        render_live_notes(self, self.icons, notes, archived, search_text, labels_by_id, edit_mode, link_path, linked_files)
 
     def add_note(self, text, pinned=False, archived=False, list_note=False, reminder_at_iso=""):
         return keep_actions.add_note(self, plugindir, text, pinned, archived, list_note, reminder_at_iso)
@@ -231,6 +244,30 @@ class GoogleKeepPlugin(Flox):
 
     def edit_note_external(self, note_id):
         return keep_actions.edit_note_external(self, plugindir, note_id)
+
+    def clipboard_link_file(self):
+        return clipboard_link_file()
+
+    def link_source(self, command_text):
+        return resolve_link_source(command_text)
+
+    def linked_files(self):
+        return sorted_links(load_registry(self.secure_settings_dir(), self.logger))
+
+    def linked_file_paths(self):
+        return {entry.get("note_id", ""): entry.get("path", "") for entry in self.linked_files()}
+
+    def linked_file_entry(self, path):
+        return find_link_by_path(load_registry(self.secure_settings_dir(), self.logger), path)
+
+    def link_file(self, path, note_id="", direction="push"):
+        return keep_actions.link_file(self, plugindir, path, note_id, direction)
+
+    def unlink_file(self, note_id):
+        return keep_actions.unlink_file(self, plugindir, note_id)
+
+    def resolve_linked_file(self, note_id, direction):
+        return keep_actions.resolve_linked_file(self, plugindir, note_id, direction)
 
     def open_webview_setup(self, email=''):
         try:
