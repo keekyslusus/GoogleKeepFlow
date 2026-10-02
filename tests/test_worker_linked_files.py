@@ -565,17 +565,49 @@ class LinkedFilesWorkerTests(unittest.TestCase):
         self.assertIsNone(self.worker.failing_since)
         self.assertFalse(self.worker.stale_notified)
 
-    def test_hourly_stats_are_logged_and_reset(self):
+    def test_periodic_stats_are_logged_and_reset(self):
         self.link(file_text="plan v2")
         self.worker.reconcile(["note-1"])
 
         with self.assertLogs("linked_files_worker", level="INFO") as logs:
-            self.worker.log_stats(self.worker.stats_started + 3600)
+            self.worker.log_stats(self.worker.stats_started + 600)
 
         line = next(message for message in logs.output if "Linked files stats" in message)
         self.assertIn("pushes=1", line)
         self.assertIn("logins=1", line)
         self.assertEqual(self.worker.stats["pushes"], 0)
+
+    def test_push_and_pull_record_last_change(self):
+        note = self.link(file_text="plan\nnew line\n")
+        self.worker.links["note-1"]["last_synced_text"] = "plan\n"
+        note.text = "plan\n"
+
+        self.worker.reconcile(["note-1"])
+
+        change = self.worker.links["note-1"]["last_change"]
+        self.assertEqual((change["direction"], change["added"], change["removed"]), ("push", 1, 0))
+
+        note.text = "plan\nfrom phone\n"
+        self.worker.reconcile(["note-1"])
+
+        change = self.worker.links["note-1"]["last_change"]
+        self.assertEqual((change["direction"], change["added"], change["removed"]), ("pull", 1, 1))
+
+    def test_unchanged_sync_keeps_previous_change(self):
+        self.link()
+        self.worker.links["note-1"]["last_change"] = {"direction": "push", "at": 1, "added": 2, "removed": 0}
+
+        self.worker.reconcile(["note-1"])
+
+        self.assertEqual(self.worker.links["note-1"]["last_change"]["at"], 1)
+
+    def test_resolved_conflict_records_change(self):
+        self.link(file_text="local\n", remote_text="remote\n", status=STATUS_CONFLICT)
+
+        self.worker.handle_job({"action": "resolve", "note_id": "note-1", "direction": DIRECTION_PULL})
+
+        change = self.worker.links["note-1"]["last_change"]
+        self.assertEqual((change["direction"], change["added"], change["removed"]), ("pull", 1, 1))
 
 
 class HelperTests(unittest.TestCase):

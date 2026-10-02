@@ -1,11 +1,13 @@
 import codecs
 import ctypes
+import difflib
 import json
 import os
 import subprocess
 import sys
 import time
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -320,12 +322,64 @@ def link_needs_attention(entry):
     return entry.get("status", STATUS_SYNCED) != STATUS_SYNCED or bool(entry.get("sync_error"))
 
 
-def link_status_text(entry):
+def line_change_counts(old_text, new_text):
+    old_lines = normalize_text(old_text).splitlines(keepends=True)
+    new_lines = normalize_text(new_text).splitlines(keepends=True)
+    added = removed = 0
+    for tag, old_start, old_end, new_start, new_end in difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False).get_opcodes():
+        if tag in ("replace", "delete"):
+            removed += old_end - old_start
+        if tag in ("replace", "insert"):
+            added += new_end - new_start
+    return added, removed
+
+
+def last_change_record(direction, old_text, new_text, at=None):
+    added, removed = line_change_counts(old_text, new_text)
+    return {"direction": direction, "at": time.time() if at is None else at, "added": added, "removed": removed}
+
+
+def format_change_time(timestamp, now=None):
+    moment = datetime.fromtimestamp(timestamp)
+    today = (now or datetime.now()).date()
+    if moment.date() == today:
+        return moment.strftime("%H:%M")
+    if moment.date() == today - timedelta(days=1):
+        return f"yesterday {moment.strftime('%H:%M')}"
+    return f"{moment.strftime('%b')} {moment.day} {moment.strftime('%H:%M')}"
+
+
+def format_line_changes(added, removed):
+    parts = [f"+{added}"] if added else []
+    if removed:
+        parts.append(f"\u2212{removed}")
+    if not parts:
+        return ""
+    return f"{' '.join(parts)} {'line' if added + removed == 1 else 'lines'}"
+
+
+def last_change_text(change, now=None):
+    try:
+        direction = change["direction"]
+        when = format_change_time(float(change["at"]), now)
+        added = int(change.get("added", 0) or 0)
+        removed = int(change.get("removed", 0) or 0)
+    except (KeyError, TypeError, ValueError, OverflowError, OSError):
+        return ""
+    label = "\u2191 Sent to Keep" if direction == DIRECTION_PUSH else "\u2193 Updated from Keep"
+    lines = format_line_changes(added, removed)
+    return f"{label} {when}" + (f" \u00b7 {lines}" if lines else "")
+
+
+def link_status_text(entry, now=None):
     status = entry.get("status", STATUS_SYNCED)
     message = str(entry.get("message", "") or "")
     if status == STATUS_SYNCED:
         sync_error = str(entry.get("sync_error", "") or "")
-        return f"Not synced: {sync_error}" if sync_error else "Synced with Google Keep"
+        if sync_error:
+            return f"Not synced: {sync_error}"
+        change = entry.get("last_change")
+        return (last_change_text(change, now) if isinstance(change, dict) else "") or "Synced with Google Keep"
     if status == STATUS_CONFLICT:
         return "Conflict: changed in both places, open the context menu to choose a version"
     if status == STATUS_FILE_MISSING:

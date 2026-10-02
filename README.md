@@ -66,9 +66,9 @@
 
 
 ### Synced files
+<img src=".github/keep_links.png" width="550">
 
-- Copy a `.txt` or `.md` file in Explorer (Ctrl+C), then use `keep link` to sync it with a new or existing note
-- You can also paste the file path: `keep link "C:\Users\pooky\note.md"`
+- Copy a `.txt`/`.md` file in Explorer (Ctrl+C), then use `keep link` to sync it with a new or existing note
 - Two-way sync: saving the file updates the note, and edits made in Google Keep are written back to the file
 - Renaming or moving the file on the same drive keeps the sync; if it is deleted, syncing pauses until it is back
 - If both sides change, syncing pauses and `keep links` lets you choose which version to keep; the other one is backed up

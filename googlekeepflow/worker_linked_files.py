@@ -43,6 +43,7 @@ from googlekeepflow.keep_file_links import (
     has_pending_jobs,
     is_linkable_file,
     jobs_dir,
+    last_change_record,
     links_dir,
     load_registry,
     normalize_link_path,
@@ -92,7 +93,7 @@ LOOP_ERROR_BACKOFF_SECONDS = 5
 RATE_LIMIT_BACKOFF_MIN_SECONDS = 2 * 60
 RATE_LIMIT_BACKOFF_MAX_SECONDS = 30 * 60
 STALE_SYNC_NOTIFY_SECONDS = 30 * 60
-STATS_LOG_SECONDS = 60 * 60
+STATS_LOG_SECONDS = 10 * 60
 BACKUP_KEEP_SECONDS = 30 * 24 * 60 * 60
 WATCHED_CODE_PATHS = (
     "plugin.json",
@@ -518,6 +519,7 @@ class LinkedFilesWorker:
                     self.report_remote_error(exc, entries, email)
                     continue
                 for entry, text, empty_backup in pushed:
+                    entry["last_change"] = last_change_record(DIRECTION_PUSH, entry.get("last_synced_text", ""), text)
                     self.mark_synced(entry, text)
                     self.last_push[entry["note_id"]] = time.time()
                     self.stats["pushes"] += 1
@@ -609,6 +611,7 @@ class LinkedFilesWorker:
             if not written:
                 return False
             previous_status = entry.get("status", STATUS_SYNCED)
+            entry["last_change"] = last_change_record(DIRECTION_PULL, entry.get("last_synced_text", ""), remote_text)
             self.mark_synced(entry, remote_text, announce=False)
             self.stats["pulls"] += 1
             logger.info("Linked file pulled: id=%s chars=%s", entry["note_id"], len(remote_text))
@@ -758,6 +761,7 @@ class LinkedFilesWorker:
             if local_text != remote_text:
                 backup_path = self.write_backup(entry["path"], local_text, "local", file_format)
                 self.write_local(entry, remote_text)
+                entry["last_change"] = last_change_record(DIRECTION_PULL, local_text, remote_text)
             synced_text = remote_text
         else:
             if len(local_text) > MAX_NOTE_CHARS:
@@ -766,6 +770,7 @@ class LinkedFilesWorker:
                 backup_path = self.write_backup(entry["path"], remote_text, "keep", file_format)
                 note.text = local_text
                 self.sync_keep(email, keep, local_changes=True)
+                entry["last_change"] = last_change_record(DIRECTION_PUSH, remote_text, local_text)
             synced_text = local_text
 
         self.mark_synced(entry, synced_text, announce=False)
