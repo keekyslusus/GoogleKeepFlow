@@ -21,9 +21,10 @@ from googlekeepflow.keep_auth_store import load_auth, protect_bytes, unprotect_b
 from googlekeepflow.keep_cache import save_cache
 from googlekeepflow.keep_reminders import ReminderError, create_keep_reminder
 from googlekeepflow.worker_auth import load_worker_auth
+from googlekeepflow.keep_http import enable_api_usage_log, new_keep_client
+from googlekeepflow.worker_common import next_top_sort_value
 
 USER_WANTS_NOTIFICATIONS = True
-SORT_STEP = 1048576
 NOTE_JOB_PATTERN = "google_keep_note_job_*.bin"
 LOCK_STALE_SECONDS = 10 * 60
 
@@ -234,21 +235,6 @@ def queue_image_item(item, email=None):
     }
 
 
-def next_top_sort_value(keep):
-    sorts = []
-    for note in keep.all():
-        try:
-            if getattr(note, "trashed", False) or getattr(note, "archived", False) or getattr(note, "pinned", False):
-                continue
-            sorts.append(int(note.sort))
-        except (TypeError, ValueError, AttributeError) as exc:
-            logger.debug("Failed to read note sort value: %s: %s", type(exc).__name__, exc)
-
-    if not sorts:
-        return SORT_STEP
-    return max(sorts) + SORT_STEP
-
-
 def parse_reminder_at(value):
     value = str(value or "").strip()
     if not value:
@@ -412,10 +398,10 @@ def process_queue(queue_file, active_email, active_master_token, settings_dir=No
 
     try:
         pulse(heartbeat)
-        keep = gkeepapi.Keep()
+        keep = new_keep_client()
         keep.authenticate(active_email, active_master_token, sync=True, device_id=device_id)
         pulse(heartbeat)
-        next_sort = next_top_sort_value(keep)
+        next_sort = next_top_sort_value(keep, logger)
         created_notes = []
 
         for item in items:
@@ -533,6 +519,7 @@ def main():
     show_notifications_str = sys.argv[2]
     settings_dir = Path(sys.argv[3])
     settings_dir.mkdir(parents=True, exist_ok=True)
+    enable_api_usage_log(settings_dir, "add_note")
     queue_file = settings_dir / "cache_note_queue.bin"
     lock_file = settings_dir / "worker.lock"
 

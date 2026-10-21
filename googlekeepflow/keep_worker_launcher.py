@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 from googlekeepflow.keep_auth_store import protect_bytes
+from googlekeepflow.keep_file_links import mark_worker_start, queue_link_job, worker_is_running, worker_needed
 from googlekeepflow.keep_labels import parse_note_labels
 from googlekeepflow.keep_values import parse_bool
 
@@ -159,6 +160,30 @@ def start_external_edit_worker(plugin_dir, email, note_id, show_notifications=Tr
         logger,
         "External edit watcher",
     )
+
+
+def start_linked_files_worker(plugin_dir, settings_dir, logger=None):
+    mark_worker_start(settings_dir)
+    start_worker(
+        plugin_dir,
+        "worker_linked_files.py",
+        [settings_dir],
+        logger,
+        "Linked files watcher",
+    )
+
+
+def ensure_linked_files_worker(plugin_dir, settings_dir, logger=None):
+    if not worker_needed(settings_dir):
+        return False
+    start_linked_files_worker(plugin_dir, settings_dir, logger)
+    return True
+
+
+def queue_linked_file_job(plugin_dir, settings_dir, job, logger=None):
+    queue_link_job(settings_dir, job)
+    if not worker_is_running(settings_dir):
+        start_linked_files_worker(plugin_dir, settings_dir, logger)
 
 
 def start_cache_refresh_worker(plugin_dir, email, settings_dir, logger=None):

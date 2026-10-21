@@ -1,10 +1,15 @@
+from pathlib import Path
+
 from googlekeepflow.keep_help import add_help_results, change_query_action, is_help_query, plugin_query
 from googlekeepflow.keep_clipboard import image_note_text, is_image_note_query
+from googlekeepflow.keep_file_links import is_linkable_file, link_needs_attention, link_status_text
 from googlekeepflow.keep_results import keep_action_subtitle, note_preview_and_labels
 from googlekeepflow.keep_query import (
     ADD_COMMANDS,
     ARCHIVE_COMMANDS,
     EDIT_COMMANDS,
+    LINK_COMMANDS,
+    LINKS_COMMANDS,
     LIST_COMMANDS,
     PIN_COMMANDS,
     REMINDER_COMMANDS,
@@ -104,6 +109,20 @@ def add_launcher_result(plugin):
                 "type": "clipboard_image",
             },
         )
+    clipboard_link_file = getattr(plugin, "clipboard_link_file", None)
+    link_path = clipboard_link_file() if callable(clipboard_link_file) else None
+    if link_path is not None:
+        link_query = f"{plugin_query(plugin.current_keyword(), 'link')} "
+        link_action = change_query_action(plugin, link_query)
+        plugin.add_item(
+            title=f"Sync copied file {link_path.name} with Google Keep",
+            subtitle="Link it to a new or existing note and keep both in sync",
+            icon=plugin.icons["link"],
+            method=link_action["method"],
+            parameters=link_action["parameters"],
+            dont_hide=link_action["dont_hide"],
+            auto_complete_text=link_query,
+        )
 
 
 def add_pending_image_result(plugin, text):
@@ -135,6 +154,12 @@ def dispatch_command(plugin, command, command_text, email, master_token):
     if command in EDIT_COMMANDS:
         return handle_edit_command(plugin, email, master_token, command_text)
 
+    if command in LINK_COMMANDS:
+        return handle_link_command(plugin, email, master_token, command_text)
+
+    if command in LINKS_COMMANDS:
+        return handle_links_command(plugin)
+
     if command in ARCHIVE_COMMANDS:
         return handle_archive_command(plugin, email, master_token, command_text)
 
@@ -159,8 +184,88 @@ def handle_list_command(plugin, email, master_token, command_text):
 
 
 def handle_edit_command(plugin, email, master_token, command_text):
-    plugin.list_notes(email, master_token, archived=False, search_text=command_text, edit_mode=True)
+    plugin.list_notes(email, master_token, archived=False, search_text=command_text, edit_mode=True, linked_files=plugin.linked_file_paths())
     return True
+
+
+def handle_link_command(plugin, email, master_token, command_text):
+    path, search_text = plugin.link_source(command_text)
+    if path is None:
+        plugin.add_item(
+            title="Copy a .txt or .md file first",
+            subtitle=f"Select it in Explorer and press Ctrl+C, or paste its full path after {plugin_query(plugin.current_keyword(), 'link')}",
+            icon=plugin.icons["link"],
+        )
+        return True
+
+    if not is_linkable_file(path):
+        plugin.add_item(
+            title=f"{path.name} can't be synced",
+            subtitle="Only .txt and .md files can be synced with Google Keep",
+            icon=plugin.icons["warning"],
+        )
+        return True
+
+    linked = plugin.linked_file_entry(path)
+    if linked:
+        add_linked_file_result(plugin, linked)
+        return True
+
+    plugin.add_item(
+        title=f"Sync {path.name} with a new note",
+        subtitle="Create a Google Keep note that stays in sync with this file",
+        icon=plugin.icons["link"],
+        method=plugin.link_file,
+        parameters=[str(path)],
+    )
+    plugin.list_notes(
+        email,
+        master_token,
+        archived=False,
+        search_text=search_text,
+        link_path=str(path),
+        linked_files=plugin.linked_file_paths(),
+    )
+    return True
+
+
+def handle_links_command(plugin):
+    entries = plugin.linked_files()
+    if not entries:
+        link_query = f"{plugin_query(plugin.current_keyword(), 'link')} "
+        link_action = change_query_action(plugin, link_query)
+        plugin.add_item(
+            title="No synced files",
+            subtitle=f"Copy a .txt or .md file, then use {link_query.strip()}",
+            icon=plugin.icons["link"],
+            method=link_action["method"],
+            parameters=link_action["parameters"],
+            dont_hide=link_action["dont_hide"],
+            auto_complete_text=link_query,
+        )
+        return True
+
+    for entry in entries:
+        add_linked_file_result(plugin, entry)
+    return True
+
+
+def add_linked_file_result(plugin, entry):
+    path = Path(entry.get("path", ""))
+    status = entry.get("status", "synced")
+    plugin.add_item(
+        title=path.name,
+        subtitle=f"{link_status_text(entry)} \u2022 {path.parent}",
+        icon=plugin.icons["warning"] if link_needs_attention(entry) else plugin.icons["link"],
+        method="open_path",
+        parameters=[str(path)],
+        context={
+            "type": "linked_file",
+            "note_id": entry.get("note_id", ""),
+            "path": str(path),
+            "status": status,
+        },
+    )
 
 
 def handle_archive_command(plugin, email, master_token, command_text):

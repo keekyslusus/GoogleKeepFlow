@@ -17,6 +17,12 @@ body:
       defaultValue: true
   - type: checkbox
     attributes:
+      name: sync_files_on_startup
+      label: "Start file sync with Windows"
+      description: "Sync files linked with `keep link` from sign-in, without opening Flow Launcher first"
+      defaultValue: false
+  - type: checkbox
+    attributes:
       name: experimental_reminders
       label: "[experimental] Reminder feature"
       description: "Enable experimental Google Keep reminders. Uses internal Keep Web endpoints and may break if Google changes them."

@@ -1,6 +1,9 @@
-from flox import Flox
+from pathlib import Path
 from urllib.parse import urlparse
 
+from flox import Flox
+
+from googlekeepflow.keep_file_links import DIRECTION_PULL, DIRECTION_PUSH, STATUS_CONFLICT, open_file
 from googlekeepflow.keep_links import open_url
 from googlekeepflow.keep_urls import open_note_url
 
@@ -28,6 +31,7 @@ class GoogleKeepContextMenuPlugin(Flox):
             "archive": "icons/archive.png",
             "default": "keep.png",
             "edit_note": "icons/edit_note.png",
+            "link": "icons/link.png",
             "list": "icons/list.png",
             "open_website": "icons/open_website.png",
             "pin": "icons/pin.png",
@@ -36,6 +40,7 @@ class GoogleKeepContextMenuPlugin(Flox):
             "trash": "icons/trash.png",
             "unpin": "icons/unpin.png",
             "clipboard": "icons/clipboard.png",
+            "warning": "icons/warn.png",
         }
 
     def open_note(self, note_id):
@@ -45,6 +50,77 @@ class GoogleKeepContextMenuPlugin(Flox):
     def open_link(self, url):
         open_url(url)
         return "Opening link..."
+
+    def open_path(self, path):
+        open_file(path)
+        return "Opening file..."
+
+    def add_linked_file_items(self, data):
+        note_id = data.get("note_id")
+        path = str(data.get("path", "") or "")
+        name = Path(path).name
+        if data.get("status") == STATUS_CONFLICT:
+            self.add_item(
+                title="Use local file version",
+                subtitle=f"Replace the Google Keep note with {name}; the note text is backed up",
+                icon=self.icons["link"],
+                method="resolve_linked_file",
+                parameters=[note_id, DIRECTION_PUSH],
+            )
+            self.add_item(
+                title="Use Google Keep version",
+                subtitle=f"Replace {name} with the note text; the file text is backed up",
+                icon=self.icons["default"],
+                method="resolve_linked_file",
+                parameters=[note_id, DIRECTION_PULL],
+            )
+        self.add_item(
+            title="Open file",
+            subtitle=path,
+            icon=self.icons["edit_note"],
+            method=self.open_path,
+            parameters=[path],
+        )
+        self.add_item(
+            title="Open note in Google Keep",
+            subtitle="Open the synced note in your browser",
+            icon=self.icons["default"],
+            method=self.open_note,
+            parameters=[note_id],
+        )
+        self.add_item(
+            title="Stop syncing",
+            subtitle="Unlink the file from the note; both are kept",
+            icon=self.icons["warning"],
+            method="unlink_file",
+            parameters=[note_id],
+        )
+
+    def add_link_target_items(self, data):
+        note_id = data.get("note_id")
+        path = str(data.get("link_path", "") or "")
+        name = Path(path).name
+        self.add_item(
+            title=f"Sync using {name}",
+            subtitle="The file text replaces this note; the note text is backed up",
+            icon=self.icons["link"],
+            method="link_file",
+            parameters=[path, note_id, DIRECTION_PUSH],
+        )
+        self.add_item(
+            title="Sync using note text",
+            subtitle=f"The note text replaces {name}; the file text is backed up",
+            icon=self.icons["default"],
+            method="link_file",
+            parameters=[path, note_id, DIRECTION_PULL],
+        )
+        self.add_item(
+            title="Open note in Google Keep",
+            subtitle="Open the full note in your browser",
+            icon=self.icons["default"],
+            method=self.open_note,
+            parameters=[note_id],
+        )
 
     def add_keep_launcher_items(self):
         for title, subtitle, url, icon in KEEP_LINKS:
@@ -74,7 +150,15 @@ class GoogleKeepContextMenuPlugin(Flox):
             )
             return
 
+        if data.get("type") == "linked_file":
+            self.add_linked_file_items(data)
+            return
+
         if data.get("type") != "keep_note":
+            return
+
+        if data.get("link_path"):
+            self.add_link_target_items(data)
             return
 
         note_id = data.get("note_id")

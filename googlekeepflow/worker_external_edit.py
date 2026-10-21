@@ -19,6 +19,7 @@ if str(lib_path) not in sys.path:
 
 from googlekeepflow.keep_auth_store import unprotect_bytes
 from googlekeepflow.keep_cache import load_note_body_cache
+from googlekeepflow.keep_http import enable_api_usage_log
 from googlekeepflow.worker_common import (
     find_note,
     load_keep,
@@ -134,10 +135,10 @@ def file_signature(path):
     return stat.st_mtime_ns, stat.st_size
 
 
-def code_fingerprint(plugin_dir=plugindir):
+def code_fingerprint(plugin_dir=plugindir, watched_paths=WATCHED_CODE_PATHS):
     plugin_dir = Path(plugin_dir)
     fingerprint = {}
-    for relative_path in WATCHED_CODE_PATHS:
+    for relative_path in watched_paths:
         path = plugin_dir / relative_path
         try:
             stat = path.stat()
@@ -171,8 +172,8 @@ def remove_watch_state(edit_dir):
         logger.debug("Failed to remove edit watch state: %s: %s", type(exc).__name__, exc)
 
 
-def code_fingerprint_changed(start_fingerprint, plugin_dir=plugindir):
-    return code_fingerprint(plugin_dir) != start_fingerprint
+def code_fingerprint_changed(start_fingerprint, plugin_dir=plugindir, watched_paths=WATCHED_CODE_PATHS):
+    return code_fingerprint(plugin_dir, watched_paths) != start_fingerprint
 
 
 def read_text_file(path):
@@ -554,6 +555,7 @@ def main():
         sys.exit(1)
 
     settings_dir = Path(sys.argv[1])
+    enable_api_usage_log(settings_dir, "external_edit")
     edit_dir = settings_dir / EDIT_DIR_NAME
     job_dir = edit_dir / JOB_DIR_NAME
     edit_dir.mkdir(parents=True, exist_ok=True)

@@ -5,6 +5,17 @@ from googlekeepflow.keep_worker_launcher import (
     start_note_worker,
     start_pin_worker,
     start_trash_worker,
+    queue_linked_file_job,
+)
+from googlekeepflow.keep_file_links import (
+    ACTION_LINK,
+    ACTION_RESOLVE,
+    ACTION_UNLINK,
+    DIRECTION_PULL,
+    DIRECTION_PUSH,
+    linked_file_for_note,
+    load_registry,
+    open_file,
 )
 from googlekeepflow.keep_clipboard import (
     IMAGE_MARKER,
@@ -226,6 +237,17 @@ def move_note_to_trash(plugin, plugin_dir, note_id):
 
 
 def edit_note_external(plugin, plugin_dir, note_id):
+    # A synced note is edited through its own file; a second temp copy would only race it.
+    linked_path = linked_file_for_note(load_registry(plugin.secure_settings_dir(), plugin.logger), note_id)
+    if linked_path is not None:
+        try:
+            open_file(linked_path)
+        except OSError as exc:
+            plugin.logger.error("Failed to open synced file: %s: %s", type(exc).__name__, exc)
+            return f"Failed: {str(exc)}"
+        reset_launcher_query(plugin)
+        return "Opening synced file..."
+
     def start(email, master_token, show_notifications, settings_dir):
         start_external_edit_worker(
             plugin_dir,
@@ -242,3 +264,44 @@ def edit_note_external(plugin, plugin_dir, note_id):
         start,
         "Opening note in your text editor...",
     )
+
+
+def queue_linked_file_action(plugin, plugin_dir, job, success_message):
+    def start(email, master_token, show_notifications, settings_dir):
+        queue_linked_file_job(
+            plugin_dir,
+            settings_dir,
+            {**job, "email": email, "show_notifications": show_notifications},
+            plugin.logger,
+        )
+
+    return start_authenticated_worker_action(
+        plugin,
+        "linked files watcher",
+        start,
+        success_message,
+    )
+
+
+def link_direction(direction):
+    return DIRECTION_PULL if str(direction or "").strip().lower() == DIRECTION_PULL else DIRECTION_PUSH
+
+
+def link_file(plugin, plugin_dir, path, note_id="", direction=DIRECTION_PUSH):
+    job = {
+        "action": ACTION_LINK,
+        "path": str(path or ""),
+        "note_id": str(note_id or ""),
+        "direction": link_direction(direction),
+    }
+    return queue_linked_file_action(plugin, plugin_dir, job, "Linking file to Google Keep...")
+
+
+def unlink_file(plugin, plugin_dir, note_id):
+    job = {"action": ACTION_UNLINK, "note_id": str(note_id or "")}
+    return queue_linked_file_action(plugin, plugin_dir, job, "Stopping file sync...")
+
+
+def resolve_linked_file(plugin, plugin_dir, note_id, direction):
+    job = {"action": ACTION_RESOLVE, "note_id": str(note_id or ""), "direction": link_direction(direction)}
+    return queue_linked_file_action(plugin, plugin_dir, job, "Resolving file sync conflict...")
